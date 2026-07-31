@@ -1,0 +1,48 @@
+# --- Secrets & credentials (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+secrets.json
+credentials.json
+**/credentials*
+**/secrets*
+
+# --- Local agent / IDE state (machine-specific paths, may carry keys) ---
+.claude/
+.graphify-venv/
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / frontend ---
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+node_modules/
+
+# --- Data, DB, reports, logs ---
+*.db
+*.sqlite
+*.sqlite3
+sqlite/
+reports/*.html
+*.log
+logs/
+
+# --- Knowledge graph (regenerated locally) ---
+graphify-out/
