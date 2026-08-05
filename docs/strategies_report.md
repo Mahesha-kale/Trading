@@ -383,3 +383,113 @@ backtest), `scripts/rank_faithful.py` (multi-symbol faithful rank),
 `scripts/pull_binance.py` (long public history), `scripts/long_history.py`
 (multi-regime walk-forward), `scripts/ensemble.py` (portfolio + correlation).
 `reports/rank_faithful.json`, `reports/ensemble.json`, Binance 15m caches.
+
+---
+
+## §11. Ensemble OOS walk-forward
+
+§10 showed the portfolio's Sharpe/dd benefit was in-sample only. This closes
+that: dense daily equity per strategy (dormant stretches = flat, ffill), weights
+tuned on TRAIN 70% daily returns (inverse-vol + closed-form min-variance + equal),
+frozen and applied to OOS 30%. `scripts/ensemble_oos.py` → `reports/ensemble_oos.json`.
+
+| scheme | OOS PF | OOS net | OOS Sharpe | OOS maxDD |
+|--------|--------|---------|-----------|-----------|
+| inverse-vol | 0.10 | -334 | -4.69 | 0.033 |
+| min-variance | 0.14 | -209 | -3.75 | 0.021 |
+| equal-weight | 0.09 | -452 | -5.00 | 0.045 |
+| best single (flat) | — | 0 | 0.00 | — |
+
+**Verdict: diversification does NOT help OOS.** Every weighting scheme loses OOS
+(OOS Sharpe -3.8 to -5.0), worse than the best single (flat at 0). The §10
+portfolio benefit was an in-sample artifact — blending uncorrelated
+negative-expectancy strategies does not manufacture out-of-sample edge, it only
+smooths the in-sample curve. Two of five strategies go dormant in the OOS
+window (vwap after 14 days, liquidity_sweep after 59), so the OOS book is
+effectively the two losing 15m trend strats, unaided.
+
+## §12. Funding-rate carry (new edge class)
+
+A structurally different edge from the price-momentum/reversion family. Binance
+public fapi gives 8h funding history (no key); price from cached Binance 15m.
+`scripts/funding_carry.py` tests two carry variants on BTCUSDT/ETHUSDT over the
+same 2.5yr multi-regime window, train 70% / OOS 30%.
+
+**Directional carry** (hold the funding-receiving side, unhedged): OOS Sharpe
+-1.66 (BTC) / -1.27 (ETH), maxDD -54% / -68%. The ~9%/yr gross funding is dwarfed
+by adverse price drift — being short the receiving side during the 2024-25 bull
+(+76% BTC OOS) is a directional bet that loses.
+
+**Delta-neutral carry** (long perp + short spot so price cancels, keep funding
+less flip fees — the real arbitrage):
+
+| | gross funding | flip cost (taker) | flip cost (maker) | OOS Sharpe taker | OOS Sharpe maker |
+|--|--|--|--|--|--|
+| BTC (2.5yr) | 24.2% | 53.8% | 26.9% | -7.7 | -3.2 |
+| ETH (2.5yr) | 24.2% | 53.8% | 26.9% | -9.8 | -5.3 |
+
+The funding sign oscillates on small rates (336 flips over 2828 events, 12% of
+intervals), and each flip = 4 fills. Even at maker (half taker), flip cost
+(26.9% over the period) exceeds gross funding income (24.2%). **No carry edge
+OOS — fees eat funding.** The ~9.7%/yr gross funding is real but is captured only
+with institutional fee structures (maker rebates, OTC, capital efficiency, low-
+flip thresholding) that retail perp trading does not have. Naive sign-flipping
+delta-neutral carry is sub-fee; the gross income cannot survive dynamic hedging
+at Binance/CoinDCX retail fees.
+
+## Overall status (post §11-§12)
+
+Both follow-up edge classes are negative: ensemble diversification has no OOS
+benefit (§11, in-sample artifact), and funding carry is sub-fee at retail (§12).
+The original 23-strategy price family has no OOS edge (§8-§10). Live capital
+remains not warranted. Remaining untested directions: spot/DMB grid (positive-
+carry structure, no liquidation/funding), microstructure/order-flow signals from
+the WS trade stream, and external (on-chain/macro) regime priors.
+
+## §13. External macro regime prior (DXY / US10Y)
+
+Foundation test before gating: does DXY (DTWEXBGS, trade-weighted dollar) or
+US10Y (DGS10, 10y treasury) predict BTC/ETH daily direction out-of-sample? FRED
+free daily CSV; BTC/ETH daily from cached Binance 15m. `scripts/macro_signal.py`
+→ `reports/macro_signal.json`. Signals: DXY 5d momentum (falling dollar → long),
+DXY below 200d MA (risk-on), 10Y 5d change (falling rates → long), combined.
+Train 70% / OOS 30%.
+
+A robust predictor is positive in BOTH halves. A signal that is +OOS but -IS (or
+vice versa) is regime luck — it aligned with this OOS regime by chance, not a
+real edge.
+
+| symbol | signal | IS Sharpe | OOS Sharpe | OOS net% | buyhold OOS sh |
+|--------|--------|----------|-----------|---------|----------------|
+| BTC | dxy_mom5 | 1.81 | -0.63 | -23.2 | 2.14 |
+| BTC | dxy_below_ma200 | -1.74 | 0.61 | 10.1 | 2.14 |
+| BTC | y10_mom5 | 1.83 | 0.47 | 6.0 | 2.14 |
+| BTC | dxy+y10 | 2.25 | -0.11 | -6.1 | 2.14 |
+| ETH | dxy_mom5 | 1.50 | 0.47 | 2.1 | 1.18 |
+| ETH | dxy_below_ma200 | -0.99 | **3.04** | 224.6 | 1.18 |
+| ETH | y10_mom5 | 1.67 | -1.13 | -50.9 | 1.18 |
+| ETH | dxy+y10 | 1.89 | -0.44 | -22.4 | 1.18 |
+
+**No robust macro edge OOS.** Every signal flips sign between halves (+IS / -OOS
+or -IS / +OOS) — the signature of regime dependence, not prediction. The one
+eye-catching result (ETH dxy_below_ma200, OOS Sharpe 3.04, +224%) is positive-OOS
+but negative-IS (-0.99): it happened to be long ETH through the 2024-25 rally, not
+a durable predictor. On BTC the same signal is -IS / weakly-+OOS. Macro signals
+do not robustly predict BTC/ETH direction, so they cannot rescue the no-edge perp
+strategies via gating.
+
+## Overall status (post §11-§13)
+
+Three follow-up edge classes tested, all negative:
+- **Ensemble OOS** (§11): diversification has no OOS benefit — the §10 portfolio
+  was an in-sample artifact (OOS Sharpe -3.8 to -5.0, worse than flat).
+- **Funding carry** (§12): gross funding income 24%/2.5yr (9.7%/yr) is sub-fee at
+  retail — hedge-flip cost (54% taker / 27% maker) exceeds it.
+- **Macro regime prior** (§13): DXY / US10Y are not robust BTC/ETH predictors —
+  every signal flips sign between train and OOS (regime luck, not edge).
+
+The original 23-strategy price family (§8-§10), portfolio diversification (§11),
+funding carry (§12), and macro gating (§13) all show no out-of-sample edge at
+retail perp cost structure. Live capital is not warranted on the evidence.
+Remaining untested: spot/grid DMB (positive-carry, no liquidation/funding) and
+microstructure/order-flow from the live WS trade stream.
