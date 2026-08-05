@@ -1,0 +1,899 @@
+{
+  "B-BTC_USDT": [
+    {
+      "name": "psar_trend",
+      "tf": "15m",
+      "params": {
+        "atr_mult": 4.0
+      },
+      "score": 1.35,
+      "full_pf": 0.68,
+      "full_net": -587.6,
+      "full_sh": -10.48,
+      "full_dd": 0.118,
+      "full_wr": 0.415,
+      "trades": 41,
+      "oos_pf": 0.72,
+      "oos_sh": -7.45,
+      "oos_net": -558.3,
+      "oos_tr": 38,
+      "profitable": false
+    },
+    {
+      "name": "donchian_breakout",
+      "tf": "15m",
+      "params": {
+        "lookback": 50,
+        "atr_mult": 4.0
+      },
+      "score": -0.37,
+      "full_pf": 0.94,
+      "full_net": -354.4,
+      "full_sh": -0.98,
+      "full_dd": 0.191,
+      "full_wr": 0.317,
+      "trades": 63,
+      "oos_pf": 0.36,
+      "oos_sh": -9.73,
+      "oos_net": -601.6,
+      "oos_tr": 10,
+      "profitable": false
+    },
+    {
+      "name": "obv_divergence",
+      "tf": "15m",
+      "params": {
+        "swing": 40,
+        "atr_mult": 4.0
+      },
+      "score": -0.77,
+      "full_pf": 0.72,
+      "full_net": -631.9,
+      "full_sh": -11.18,
+      "full_dd": 0.165,
+      "full_wr": 0.407,
+      "trades": 27,
+      "oos_pf": 0.86,
+      "oos_sh": -5.87,
+      "oos_net": -500.7,
+      "oos_tr": 47,
+      "profitable": false
+    },
+    {
+      "name": "ichimoku_breakout",
+      "tf": "15m",
+      "params": {
+        "atr_mult": 4.0
+      },
+      "score": -0.97,
+      "full_pf": 0.55,
+      "full_net": -647.7,
+      "full_sh": -13.05,
+      "full_dd": 0.121,
+      "full_wr": 0.25,
+      "trades": 24,
+      "oos_pf": 0.7,
+      "oos_sh": -6.59,
+      "oos_net": -510.1,
+      "oos_tr": 29,
+      "profitable": false
+    },
+    {
+      "name": "fair_value_gap",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.0
+      },
+      "score": -1.0,
+      "full_pf": 0.12,
+      "full_net": -663.4,
+      "full_sh": -93.33,
+      "full_dd": 0.077,
+      "full_wr": 0.4,
+      "trades": 5,
+      "oos_pf": 0.05,
+      "oos_sh": -76.09,
+      "oos_net": -580.5,
+      "oos_tr": 4,
+      "profitable": false
+    },
+    {
+      "name": "vwap_pullback",
+      "tf": "5m",
+      "params": {
+        "tol_atr": 0.7,
+        "atr_mult": 3.5
+      },
+      "score": -1.0,
+      "full_pf": 1.09,
+      "full_net": 553.2,
+      "full_sh": -0.38,
+      "full_dd": 0.174,
+      "full_wr": 0.425,
+      "trades": 87,
+      "oos_pf": 0.0,
+      "oos_sh": -126.93,
+      "oos_net": -559.0,
+      "oos_tr": 3,
+      "profitable": true
+    },
+    {
+      "name": "stochrsi_reversal",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.0,
+        "tp_mult": 8.0
+      },
+      "score": -1.0,
+      "full_pf": 0.0,
+      "full_net": -600.9,
+      "full_sh": -46.46,
+      "full_dd": 0.061,
+      "full_wr": 0.0,
+      "trades": 1,
+      "oos_pf": 0.0,
+      "oos_sh": -55.99,
+      "oos_net": -507.3,
+      "oos_tr": 2,
+      "profitable": false
+    },
+    {
+      "name": "wyckoff",
+      "tf": "15m",
+      "params": {
+        "sos_window": 80,
+        "atr_mult": 5.0
+      },
+      "score": -1.0,
+      "full_pf": 0.09,
+      "full_net": -508.9,
+      "full_sh": -10.05,
+      "full_dd": 0.056,
+      "full_wr": 0.375,
+      "trades": 8,
+      "oos_pf": 0.0,
+      "oos_sh": -8.25,
+      "oos_net": -501.0,
+      "oos_tr": 2,
+      "profitable": false
+    },
+    {
+      "name": "regime_gate",
+      "tf": "15m",
+      "params": {
+        "bull": "stochrsi_reversal",
+        "adx_thresh": 25
+      },
+      "score": -1.0,
+      "full_pf": 0.0,
+      "full_net": -13458.9,
+      "full_sh": -1.58,
+      "full_dd": 1.488,
+      "full_wr": 0.0,
+      "trades": 1,
+      "oos_pf": 0.0,
+      "oos_sh": -1.88,
+      "oos_net": -4025.9,
+      "oos_tr": 1,
+      "profitable": false
+    },
+    {
+      "name": "keltner_mr",
+      "tf": "5m",
+      "params": {
+        "mult": 2.2,
+        "atr_mult": 3.0
+      },
+      "score": -2.0,
+      "full_pf": 0.83,
+      "full_net": -536.8,
+      "full_sh": -5.29,
+      "full_dd": 0.119,
+      "full_wr": 0.533,
+      "trades": 30,
+      "oos_pf": 0.37,
+      "oos_sh": -39.25,
+      "oos_net": -623.4,
+      "oos_tr": 7,
+      "profitable": false
+    },
+    {
+      "name": "ema_pullback",
+      "tf": "15m",
+      "params": {
+        "tol_atr": 0.4,
+        "atr_mult": 4.0
+      },
+      "score": -2.5,
+      "full_pf": 0.59,
+      "full_net": -568.5,
+      "full_sh": -8.0,
+      "full_dd": 0.119,
+      "full_wr": 0.278,
+      "trades": 18,
+      "oos_pf": 0.74,
+      "oos_sh": -5.3,
+      "oos_net": -601.5,
+      "oos_tr": 32,
+      "profitable": false
+    },
+    {
+      "name": "opening_range_breakout",
+      "tf": "15m",
+      "params": {
+        "range_bars": 3,
+        "atr_mult": 4.0
+      },
+      "score": -3.2,
+      "full_pf": 0.53,
+      "full_net": -603.1,
+      "full_sh": -12.13,
+      "full_dd": 0.115,
+      "full_wr": 0.308,
+      "trades": 13,
+      "oos_pf": 0.83,
+      "oos_sh": -5.03,
+      "oos_net": -648.2,
+      "oos_tr": 55,
+      "profitable": false
+    },
+    {
+      "name": "cci_reversion",
+      "tf": "5m",
+      "params": {
+        "period": 20,
+        "atr_mult": 3.0
+      },
+      "score": -3.25,
+      "full_pf": 0.88,
+      "full_net": -583.4,
+      "full_sh": -6.02,
+      "full_dd": 0.174,
+      "full_wr": 0.625,
+      "trades": 64,
+      "oos_pf": 0.52,
+      "oos_sh": -28.38,
+      "oos_net": -612.2,
+      "oos_tr": 17,
+      "profitable": false
+    },
+    {
+      "name": "adx_trend",
+      "tf": "15m",
+      "params": {
+        "adx_thresh": 28,
+        "atr_mult": 4.0
+      },
+      "score": -4.7,
+      "full_pf": 0.49,
+      "full_net": -534.0,
+      "full_sh": -7.93,
+      "full_dd": 0.103,
+      "full_wr": 0.091,
+      "trades": 11,
+      "oos_pf": 0.67,
+      "oos_sh": -6.56,
+      "oos_net": -552.9,
+      "oos_tr": 19,
+      "profitable": false
+    },
+    {
+      "name": "liquidity_sweep",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.5,
+        "sweep_pen": 0.001
+      },
+      "score": -8.65,
+      "full_pf": 0.82,
+      "full_net": -620.1,
+      "full_sh": -4.43,
+      "full_dd": 0.182,
+      "full_wr": 0.37,
+      "trades": 54,
+      "oos_pf": 0.0,
+      "oos_sh": -59.45,
+      "oos_net": -643.8,
+      "oos_tr": 5,
+      "profitable": false
+    }
+  ],
+  "B-ETH_USDT": [
+    {
+      "name": "vwap_pullback",
+      "tf": "5m",
+      "params": {
+        "tol_atr": 0.7,
+        "atr_mult": 3.5
+      },
+      "score": 27.33,
+      "full_pf": 1.08,
+      "full_net": 368.2,
+      "full_sh": -0.07,
+      "full_dd": 0.19,
+      "full_wr": 0.415,
+      "trades": 65,
+      "oos_pf": 0.73,
+      "oos_sh": -9.1,
+      "oos_net": -521.2,
+      "oos_tr": 21,
+      "profitable": true
+    },
+    {
+      "name": "liquidity_sweep",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.5,
+        "sweep_pen": 0.001
+      },
+      "score": 23.29,
+      "full_pf": 1.05,
+      "full_net": 499.3,
+      "full_sh": -0.39,
+      "full_dd": 0.181,
+      "full_wr": 0.444,
+      "trades": 144,
+      "oos_pf": 0.41,
+      "oos_sh": -16.19,
+      "oos_net": -757.6,
+      "oos_tr": 12,
+      "profitable": true
+    },
+    {
+      "name": "ema_pullback",
+      "tf": "15m",
+      "params": {
+        "tol_atr": 0.4,
+        "atr_mult": 4.0
+      },
+      "score": 18.94,
+      "full_pf": 1.2,
+      "full_net": 1076.7,
+      "full_sh": 1.52,
+      "full_dd": 0.165,
+      "full_wr": 0.333,
+      "trades": 57,
+      "oos_pf": 0.57,
+      "oos_sh": -8.47,
+      "oos_net": -552.3,
+      "oos_tr": 19,
+      "profitable": true
+    },
+    {
+      "name": "adx_trend",
+      "tf": "15m",
+      "params": {
+        "adx_thresh": 28,
+        "atr_mult": 4.0
+      },
+      "score": 11.76,
+      "full_pf": 1.07,
+      "full_net": 432.4,
+      "full_sh": 0.36,
+      "full_dd": 0.185,
+      "full_wr": 0.303,
+      "trades": 66,
+      "oos_pf": 0.41,
+      "oos_sh": -15.89,
+      "oos_net": -513.2,
+      "oos_tr": 11,
+      "profitable": true
+    },
+    {
+      "name": "donchian_breakout",
+      "tf": "15m",
+      "params": {
+        "lookback": 50,
+        "atr_mult": 4.0
+      },
+      "score": 8.08,
+      "full_pf": 1.11,
+      "full_net": 1288.7,
+      "full_sh": 0.47,
+      "full_dd": 0.189,
+      "full_wr": 0.331,
+      "trades": 139,
+      "oos_pf": 0.0,
+      "oos_sh": -25.14,
+      "oos_net": -612.4,
+      "oos_tr": 6,
+      "profitable": true
+    },
+    {
+      "name": "psar_trend",
+      "tf": "15m",
+      "params": {
+        "atr_mult": 4.0
+      },
+      "score": -0.04,
+      "full_pf": 0.77,
+      "full_net": -503.5,
+      "full_sh": -5.97,
+      "full_dd": 0.15,
+      "full_wr": 0.349,
+      "trades": 43,
+      "oos_pf": 0.74,
+      "oos_sh": -6.76,
+      "oos_net": -605.5,
+      "oos_tr": 45,
+      "profitable": false
+    },
+    {
+      "name": "fair_value_gap",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.0
+      },
+      "score": -1.0,
+      "full_pf": 0.97,
+      "full_net": -274.9,
+      "full_sh": -6.47,
+      "full_dd": 0.2,
+      "full_wr": 0.698,
+      "trades": 212,
+      "oos_pf": 0.0,
+      "oos_sh": -143.24,
+      "oos_net": -903.5,
+      "oos_tr": 4,
+      "profitable": false
+    },
+    {
+      "name": "stochrsi_reversal",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.0,
+        "tp_mult": 2.0
+      },
+      "score": -1.0,
+      "full_pf": 1.02,
+      "full_net": 166.3,
+      "full_sh": -1.43,
+      "full_dd": 0.206,
+      "full_wr": 0.612,
+      "trades": 116,
+      "oos_pf": 0.0,
+      "oos_sh": -193.58,
+      "oos_net": -650.8,
+      "oos_tr": 3,
+      "profitable": true
+    },
+    {
+      "name": "cci_reversion",
+      "tf": "5m",
+      "params": {
+        "period": 20,
+        "atr_mult": 3.0
+      },
+      "score": -1.0,
+      "full_pf": 0.89,
+      "full_net": -526.1,
+      "full_sh": -5.43,
+      "full_dd": 0.127,
+      "full_wr": 0.657,
+      "trades": 67,
+      "oos_pf": 0.0,
+      "oos_sh": -132.47,
+      "oos_net": -606.0,
+      "oos_tr": 2,
+      "profitable": false
+    },
+    {
+      "name": "regime_gate",
+      "tf": "15m",
+      "params": {
+        "bull": "stochrsi_reversal",
+        "adx_thresh": 25
+      },
+      "score": -1.0,
+      "full_pf": 0.0,
+      "full_net": -10987.6,
+      "full_sh": -2.24,
+      "full_dd": 1.161,
+      "full_wr": 0.0,
+      "trades": 1,
+      "oos_pf": 0.0,
+      "oos_sh": -3.09,
+      "oos_net": -7395.6,
+      "oos_tr": 1,
+      "profitable": false
+    },
+    {
+      "name": "ichimoku_breakout",
+      "tf": "15m",
+      "params": {
+        "atr_mult": 4.0
+      },
+      "score": -2.85,
+      "full_pf": 0.66,
+      "full_net": -504.4,
+      "full_sh": -6.48,
+      "full_dd": 0.118,
+      "full_wr": 0.273,
+      "trades": 22,
+      "oos_pf": 0.55,
+      "oos_sh": -10.72,
+      "oos_net": -545.2,
+      "oos_tr": 26,
+      "profitable": false
+    },
+    {
+      "name": "opening_range_breakout",
+      "tf": "15m",
+      "params": {
+        "range_bars": 3,
+        "atr_mult": 4.0
+      },
+      "score": -3.25,
+      "full_pf": 0.75,
+      "full_net": -537.4,
+      "full_sh": -3.9,
+      "full_dd": 0.175,
+      "full_wr": 0.36,
+      "trades": 25,
+      "oos_pf": 0.68,
+      "oos_sh": -10.75,
+      "oos_net": -515.4,
+      "oos_tr": 24,
+      "profitable": false
+    },
+    {
+      "name": "obv_divergence",
+      "tf": "15m",
+      "params": {
+        "swing": 40,
+        "atr_mult": 4.0
+      },
+      "score": -3.63,
+      "full_pf": 0.65,
+      "full_net": -932.6,
+      "full_sh": -9.03,
+      "full_dd": 0.205,
+      "full_wr": 0.385,
+      "trades": 26,
+      "oos_pf": 0.8,
+      "oos_sh": -7.3,
+      "oos_net": -533.3,
+      "oos_tr": 41,
+      "profitable": false
+    },
+    {
+      "name": "keltner_mr",
+      "tf": "5m",
+      "params": {
+        "mult": 2.2,
+        "atr_mult": 3.0
+      },
+      "score": -4.05,
+      "full_pf": 0.82,
+      "full_net": -650.0,
+      "full_sh": -5.58,
+      "full_dd": 0.183,
+      "full_wr": 0.528,
+      "trades": 36,
+      "oos_pf": 0.49,
+      "oos_sh": -23.14,
+      "oos_net": -657.5,
+      "oos_tr": 8,
+      "profitable": false
+    },
+    {
+      "name": "wyckoff",
+      "tf": "15m",
+      "params": {
+        "sos_window": 80,
+        "atr_mult": 5.0
+      },
+      "score": -10.18,
+      "full_pf": 0.14,
+      "full_net": -602.0,
+      "full_sh": -8.24,
+      "full_dd": 0.062,
+      "full_wr": 0.2,
+      "trades": 5,
+      "oos_pf": 0.09,
+      "oos_sh": -11.97,
+      "oos_net": -521.9,
+      "oos_tr": 6,
+      "profitable": false
+    }
+  ],
+  "B-SOL_USDT": [
+    {
+      "name": "ema_pullback",
+      "tf": "15m",
+      "params": {
+        "tol_atr": 0.4,
+        "atr_mult": 4.0
+      },
+      "score": 13.59,
+      "full_pf": 0.83,
+      "full_net": -541.1,
+      "full_sh": -2.63,
+      "full_dd": 0.133,
+      "full_wr": 0.341,
+      "trades": 41,
+      "oos_pf": 0.97,
+      "oos_sh": -0.71,
+      "oos_net": -180.1,
+      "oos_tr": 91,
+      "profitable": false
+    },
+    {
+      "name": "psar_trend",
+      "tf": "15m",
+      "params": {
+        "atr_mult": 4.0
+      },
+      "score": 3.23,
+      "full_pf": 0.78,
+      "full_net": -587.6,
+      "full_sh": -5.42,
+      "full_dd": 0.134,
+      "full_wr": 0.361,
+      "trades": 61,
+      "oos_pf": 0.91,
+      "oos_sh": -3.1,
+      "oos_net": -409.1,
+      "oos_tr": 100,
+      "profitable": false
+    },
+    {
+      "name": "fair_value_gap",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.0
+      },
+      "score": 1.24,
+      "full_pf": 0.8,
+      "full_net": -546.3,
+      "full_sh": -16.34,
+      "full_dd": 0.091,
+      "full_wr": 0.694,
+      "trades": 49,
+      "oos_pf": 0.56,
+      "oos_sh": -33.56,
+      "oos_net": -571.6,
+      "oos_tr": 21,
+      "profitable": false
+    },
+    {
+      "name": "adx_trend",
+      "tf": "15m",
+      "params": {
+        "adx_thresh": 28,
+        "atr_mult": 4.0
+      },
+      "score": 0.1,
+      "full_pf": 0.86,
+      "full_net": -501.0,
+      "full_sh": -1.66,
+      "full_dd": 0.167,
+      "full_wr": 0.365,
+      "trades": 52,
+      "oos_pf": 0.52,
+      "oos_sh": -6.73,
+      "oos_net": -583.3,
+      "oos_tr": 14,
+      "profitable": false
+    },
+    {
+      "name": "stochrsi_reversal",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.0,
+        "tp_mult": 8.0
+      },
+      "score": -1.0,
+      "full_pf": 1.0,
+      "full_net": 10.1,
+      "full_sh": -0.22,
+      "full_dd": 0.208,
+      "full_wr": 0.288,
+      "trades": 52,
+      "oos_pf": 0.0,
+      "oos_sh": -91.69,
+      "oos_net": -500.9,
+      "oos_tr": 2,
+      "profitable": true
+    },
+    {
+      "name": "obv_divergence",
+      "tf": "15m",
+      "params": {
+        "swing": 40,
+        "atr_mult": 4.0
+      },
+      "score": -1.0,
+      "full_pf": 0.77,
+      "full_net": -553.9,
+      "full_sh": -5.33,
+      "full_dd": 0.131,
+      "full_wr": 0.379,
+      "trades": 29,
+      "oos_pf": 0.0,
+      "oos_sh": -54.57,
+      "oos_net": -517.0,
+      "oos_tr": 3,
+      "profitable": false
+    },
+    {
+      "name": "regime_gate",
+      "tf": "15m",
+      "params": {
+        "bull": "stochrsi_reversal",
+        "adx_thresh": 25
+      },
+      "score": -1.0,
+      "full_pf": 0.0,
+      "full_net": -5365.6,
+      "full_sh": -3.4,
+      "full_dd": 0.552,
+      "full_wr": 0.0,
+      "trades": 1,
+      "oos_pf": 0.0,
+      "oos_sh": -1.88,
+      "oos_net": -2654.5,
+      "oos_tr": 1,
+      "profitable": false
+    },
+    {
+      "name": "ichimoku_breakout",
+      "tf": "15m",
+      "params": {
+        "atr_mult": 4.0
+      },
+      "score": -1.38,
+      "full_pf": 0.65,
+      "full_net": -537.7,
+      "full_sh": -5.76,
+      "full_dd": 0.104,
+      "full_wr": 0.235,
+      "trades": 34,
+      "oos_pf": 0.35,
+      "oos_sh": -15.53,
+      "oos_net": -524.6,
+      "oos_tr": 14,
+      "profitable": false
+    },
+    {
+      "name": "liquidity_sweep",
+      "tf": "5m",
+      "params": {
+        "atr_mult": 3.5,
+        "sweep_pen": 0.001
+      },
+      "score": -2.61,
+      "full_pf": 0.86,
+      "full_net": -546.9,
+      "full_sh": -3.26,
+      "full_dd": 0.157,
+      "full_wr": 0.383,
+      "trades": 60,
+      "oos_pf": 0.44,
+      "oos_sh": -15.88,
+      "oos_net": -529.8,
+      "oos_tr": 13,
+      "profitable": false
+    },
+    {
+      "name": "keltner_mr",
+      "tf": "5m",
+      "params": {
+        "mult": 2.2,
+        "atr_mult": 3.0
+      },
+      "score": -2.9,
+      "full_pf": 0.91,
+      "full_net": -527.5,
+      "full_sh": -2.32,
+      "full_dd": 0.174,
+      "full_wr": 0.526,
+      "trades": 57,
+      "oos_pf": 0.39,
+      "oos_sh": -22.66,
+      "oos_net": -588.1,
+      "oos_tr": 7,
+      "profitable": false
+    },
+    {
+      "name": "vwap_pullback",
+      "tf": "5m",
+      "params": {
+        "tol_atr": 0.7,
+        "atr_mult": 3.5
+      },
+      "score": -3.38,
+      "full_pf": 0.6,
+      "full_net": -529.1,
+      "full_sh": -12.79,
+      "full_dd": 0.068,
+      "full_wr": 0.476,
+      "trades": 21,
+      "oos_pf": 0.27,
+      "oos_sh": -23.41,
+      "oos_net": -574.8,
+      "oos_tr": 12,
+      "profitable": false
+    },
+    {
+      "name": "donchian_breakout",
+      "tf": "15m",
+      "params": {
+        "lookback": 50,
+        "atr_mult": 4.0
+      },
+      "score": -3.48,
+      "full_pf": 0.76,
+      "full_net": -572.2,
+      "full_sh": -2.49,
+      "full_dd": 0.104,
+      "full_wr": 0.344,
+      "trades": 32,
+      "oos_pf": 0.0,
+      "oos_sh": -22.99,
+      "oos_net": -622.5,
+      "oos_tr": 5,
+      "profitable": false
+    },
+    {
+      "name": "opening_range_breakout",
+      "tf": "15m",
+      "params": {
+        "range_bars": 3,
+        "atr_mult": 4.0
+      },
+      "score": -4.47,
+      "full_pf": 0.66,
+      "full_net": -605.1,
+      "full_sh": -7.43,
+      "full_dd": 0.115,
+      "full_wr": 0.308,
+      "trades": 26,
+      "oos_pf": 0.23,
+      "oos_sh": -28.64,
+      "oos_net": -566.9,
+      "oos_tr": 11,
+      "profitable": false
+    },
+    {
+      "name": "cci_reversion",
+      "tf": "5m",
+      "params": {
+        "period": 20,
+        "atr_mult": 3.0
+      },
+      "score": -4.62,
+      "full_pf": 0.94,
+      "full_net": -620.5,
+      "full_sh": -3.48,
+      "full_dd": 0.203,
+      "full_wr": 0.645,
+      "trades": 141,
+      "oos_pf": 0.48,
+      "oos_sh": -21.74,
+      "oos_net": -578.9,
+      "oos_tr": 10,
+      "profitable": false
+    },
+    {
+      "name": "wyckoff",
+      "tf": "15m",
+      "params": {
+        "sos_window": 80,
+        "atr_mult": 5.0
+      },
+      "score": -7.68,
+      "full_pf": 0.44,
+      "full_net": -554.2,
+      "full_sh": -4.68,
+      "full_dd": 0.081,
+      "full_wr": 0.231,
+      "trades": 13,
+      "oos_pf": 0.17,
+      "oos_sh": -6.47,
+      "oos_net": -518.9,
+      "oos_tr": 6,
+      "profitable": false
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "symbol": "B-ETH_USDT",
+  "strategies": [
+    [
+      "vwap_pullback",
+      "5m",
+      {
+        "tol_atr": 0.7,
+        "atr_mult": 3.5
+      }
+    ],
+    [
+      "liquidity_sweep",
+      "5m",
+      {
+        "atr_mult": 3.5,
+        "sweep_pen": 0.001
+      }
+    ],
+    [
+      "ema_pullback",
+      "15m",
+      {
+        "tol_atr": 0.4,
+        "atr_mult": 4.0
+      }
+    ],
+    [
+      "adx_trend",
+      "15m",
+      {
+        "adx_thresh": 28,
+        "atr_mult": 4.0
+      }
+    ],
+    [
+      "donchian_breakout",
+      "15m",
+      {
+        "lookback": 50,
+        "atr_mult": 4.0
+      }
+    ]
+  ],
+  "correlation": {
+    "vwap_pullback": {
+      "vwap_pullback": 1.0,
+      "liquidity_sweep": 0.252,
+      "ema_pullback": NaN,
+      "adx_trend": NaN,
+      "donchian_breakout": -0.321
+    },
+    "liquidity_sweep": {
+      "vwap_pullback": 0.252,
+      "liquidity_sweep": 1.0,
+      "ema_pullback": NaN,
+      "adx_trend": NaN,
+      "donchian_breakout": 0.074
+    },
+    "ema_pullback": {
+      "vwap_pullback": NaN,
+      "liquidity_sweep": NaN,
+      "ema_pullback": 1.0,
+      "adx_trend": 0.562,
+      "donchian_breakout": 0.423
+    },
+    "adx_trend": {
+      "vwap_pullback": NaN,
+      "liquidity_sweep": NaN,
+      "ema_pullback": 0.562,
+      "adx_trend": 1.0,
+      "donchian_breakout": 0.756
+    },
+    "donchian_breakout": {
+      "vwap_pullback": -0.321,
+      "liquidity_sweep": 0.074,
+      "ema_pullback": 0.423,
+      "adx_trend": 0.756,
+      "donchian_breakout": 1.0
+    }
+  },
+  "portfolio_invvol": {
+    "net_profit": 130.62,
+    "gross_profit": 0.0,
+    "gross_loss": 0.0,
+    "win_rate": 0.0,
+    "loss_rate": 1.0,
+    "profit_factor": 1.04,
+    "max_drawdown": 0.122,
+    "sharpe": 0.3119,
+    "sortino": 0.8329,
+    "calmar": 0.413,
+    "avg_win": 0.0,
+    "avg_loss": 0.0,
+    "largest_win": 0.0,
+    "largest_loss": 0.0,
+    "expectancy": 0.0,
+    "recovery_factor": 0.0,
+    "avg_duration_h": 0.0,
+    "consecutive_wins": 0.0,
+    "consecutive_losses": 0.0,
+    "monthly_return": -0.001,
+    "annualized_return": 0.0504,
+    "return_on_capital": 0.0,
+    "num_trades": 0.0
+  },
+  "portfolio_equalw": {
+    "net_profit": 58.34,
+    "gross_profit": 0.0,
+    "gross_loss": 0.0,
+    "win_rate": 0.0,
+    "loss_rate": 1.0,
+    "profit_factor": 1.03,
+    "max_drawdown": 0.1003,
+    "sharpe": 0.2108,
+    "sortino": 0.5421,
+    "calmar": 0.2222,
+    "avg_win": 0.0,
+    "avg_loss": 0.0,
+    "largest_win": 0.0,
+    "largest_loss": 0.0,
+    "expectancy": 0.0,
+    "recovery_factor": 0.0,
+    "avg_duration_h": 0.0,
+    "consecutive_wins": 0.0,
+    "consecutive_losses": 0.0,
+    "monthly_return": -0.0013,
+    "annualized_return": 0.0223,
+    "return_on_capital": 0.0,
+    "num_trades": 0.0
+  }
+}

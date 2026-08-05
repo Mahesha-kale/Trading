@@ -277,3 +277,109 @@ explicit expectation it is **not backtest-profitable**. The `tp_mult=8` OOS-
 positive config is a higher-EV but fragile gamble (regime luck, 31 OOS trades);
 deploy it to paper only if accepting that it is chasing a recent-regime fluke.
 Live capital: still not warranted on the evidence.
+---
+
+## §8. Signal-faithful multi-symbol rank (BTC / ETH / SOL)
+
+The engine backtest does not predict paper/live (§7), so all prior ranks were
+tuning the wrong sim. Built `app/backtest/faithful.py` — `run_faithful`
+reproduces the live engine loop exactly: entry on 0→1, exit on 1→0,
+`RiskManager` gating (daily-loss / drawdown / max-pos), 2-ATR sizing stop,
+maker/taker fees, isolated-margin liquidation, 8h funding. Self-check passed
+(3 trades on synthetic). `scripts/rank_faithful.py` grids each persistent-1
+strategy on train tail(8000), runs full + OOS (last 30%) via `run_faithful`,
+scores (PF/Sharpe/maxDD/stability/trade-count + profit bonus). Reports
+`reports/rank_faithful.json`.
+
+**Cross-symbol profitable (full-sample net>0 AND PF>1):**
+
+| symbol | profitable | best (full) | OOS Sharpe |
+|--------|-----------|-------------|-----------|
+| BTC | 1 | vwap_pullback 5m +553 PF1.09 | **-126** |
+| ETH | 6 | donchian 15m +1289 PF1.11; ema_pullback +1077 PF1.20 sh1.52 | **-8 to -193** |
+| SOL | 1 | stochrsi 5m +10 PF1.00 | -92 |
+
+**Every "profitable" config has a deeply negative OOS Sharpe.** Full-sample
+profit on ETH (6 strategies, some with full Sharpe >1) is **regime luck**: the
+last 30% OOS window is uniformly negative. `regime_gate` blows up (liquidation,
+dd 1.16-1.49) on all three symbols — the router adds risk without edge. No
+strategy transfers edge to ETH/SOL either; the edge simply does not exist in
+this signal family under realistic costs.
+
+## §9. Long-history walk-forward (2.5yr Binance public data, multi-regime)
+
+The CoinDCX API caps 15m at ~330d — a single regime, which is why everything
+looked like regime luck. Pulled 2.5yr (2023-01..2025-07) BTC + ETH 15m from
+Binance Vision public klines (`scripts/pull_binance.py`, stdlib only, ~90k bars
+each, cached `reports/binance_*_15m.csv`). `scripts/long_history.py` runs each
+15m deployable strategy via `run_faithful` full-sample + 4-fold rolling
+walk-forward (tune on expanding train window, score next OOS window).
+
+BTC 15m results (the decisive test — 2.5yr spans 2023 bear → 2024 bull → 2025
+chop):
+
+| strategy | full PF | full net | full Sharpe | OOS folds pos | agg OOS net |
+|----------|--------|---------|------------|--------------|-------------|
+| obv_divergence | **1.43** | **+4112** | **5.50** | **0/4** | **-2413** |
+| adx_trend | 1.33 | +3081 | 2.19 | 0/4 | -2355 |
+| ichimoku_breakout | 1.28 | +1577 | 1.39 | 0/4 | -2158 |
+| opening_range_breakout | 1.27 | +1759 | 1.90 | 0/4 | -2252 |
+| donchian_breakout | 1.08 | +919 | -0.01 | 0/4 | -2414 |
+| regime_gate | 1.10 | — | — | 1/4 | -1817 |
+| ema_pullback | 0.61 | -608 | -12.6 | 0/4 | -2349 |
+| psar_trend | 0.37 | -581 | -22.7 | 0/4 | -2181 |
+| wyckoff | 0.21 | -538 | -6.7 | 1/4 | -1214 |
+
+**Zero strategies are durable** (need full PF>1, >50% pos folds, agg OOS>0).
+The strongest in-sample case (obv_divergence, full PF 1.43, +4112, Sharpe 5.5)
+loses -2413 aggregated across the four OOS windows with **0/4 positive folds**.
+At best two strategies scrape 1/4 positive folds (wyckoff, regime_gate) — both
+still full-negative or agg-OOS-negative. This is the cleanest possible negative
+result: on multi-regime data, the gross "edge" is pure in-sample fit; it has
+**zero out-of-sample persistence**. The single-regime CoinDCX window was hiding
+this by making the in-sample fit look like a real edge.
+
+## §10. Portfolio ensemble + correlation sizing
+
+`scripts/ensemble.py` — picks the top-5 faithful-ranked ETH strategies, reruns
+each via `run_faithful`, builds daily-return correlation, sizes by inverse-vol,
+backtests the blended portfolio. Reports `reports/ensemble.json`.
+
+Correlation (ETH top-5): low cross-block — 5m strategies corr 0.25 with each
+other, 15m block corr 0.42-0.76, near-zero across the 5m/15m divide. Low
+correlation is the precondition for diversification.
+
+| portfolio | PF | net | Sharpe | maxDD | annRet |
+|-----------|----|-----|--------|-------|--------|
+| inverse-vol | 1.04 | +131 | 0.31 | 0.122 | 5.0% |
+| equal-weight | 1.03 | +58 | 0.21 | 0.100 | — |
+| (best single, donchian) | 1.11 | +1288 | 0.47 | 0.189 | — |
+
+**Diversification works mechanically** — it cuts drawdown (0.12 vs 0.19 single)
+and smooths the curve (Sharpe 0.31 where the equal-weight blend of dead-OOS
+strategies would naively be ~0). But this is **full-sample, in-sample**: every
+component's OOS Sharpe is deeply negative (§8), and §9 shows zero OOS fold
+persistence. Blending uncorrelated negative-expectancy strategies does not
+manufacture positive expectancy out-of-sample — it only reduces variance. The
+portfolio's 5% annRet / 0.31 Sharpe is the same regime-luck artifact as the
+single strategies, just averaged.
+
+## Overall verdict (post §8-§10)
+
+The four follow-ups converge on one evidence-based conclusion: **no strategy in
+this 23-strategy family has out-of-sample edge** under realistic perp costs on
+BTC, ETH, or SOL, on either the 330d CoinDCX window or 2.5yr multi-regime
+Binance history. Full-sample profit appears (ETH, 2.5yr) but **never persists
+OOS** (0/4 walk-forward folds, every OOS Sharpe negative). The faithful engine
+now lets us measure this honestly — prior engine backtests were misleading.
+
+Live capital is not warranted. The path forward is not more parameter tuning on
+this signal set (proven empty), but a new edge source: regime-conditional
+meta-strategies, cross-exchange basis, funding-rate carry, or order-flow /
+microstructure signals — validated with the same faithful + walk-forward rigour.
+
+**Delivered this sprint (kept):** `app/backtest/faithful.py` (live-predicting
+backtest), `scripts/rank_faithful.py` (multi-symbol faithful rank),
+`scripts/pull_binance.py` (long public history), `scripts/long_history.py`
+(multi-regime walk-forward), `scripts/ensemble.py` (portfolio + correlation).
+`reports/rank_faithful.json`, `reports/ensemble.json`, Binance 15m caches.
