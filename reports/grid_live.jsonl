@@ -1,0 +1,9 @@
+2026-08-05T20:20:22+00:00 grid_live start pair=B-BTC_USDT g=0.02 K=20 fee=0.001 run=75s
+2026-08-05T20:20:32+00:00 ws attempt 0 failed: timed out during opening handshake
+2026-08-05T20:20:36+00:00 ws attempt 1 failed: server rejected WebSocket connection: HTTP 503
+2026-08-05T20:20:48+00:00 ws attempt 2 failed: timed out during opening handshake
+2026-08-05T20:20:50+00:00 ws feed unavailable after retries -> fallback
+2026-08-05T20:20:50+00:00 WS unavailable -> candle-poll fallback (60s cadence)
+2026-08-05T20:20:50+00:00 poll 1 px=64852.40 eq=10000.0 open=0 anchor=64852.40
+2026-08-05T20:21:50+00:00 poll 2 px=64950.00 eq=10000.0 open=0 anchor=64950.00
+2026-08-05T20:22:50+00:00 done: 2 samples | final equity 10000.00 | pnl +0.00 | open_buys 0 | anchor 64950.0

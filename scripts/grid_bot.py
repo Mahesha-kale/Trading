@@ -33,42 +33,81 @@ def load(symbol: str) -> pd.Series:
     raise SystemExit(f"no cache for {symbol}; run scripts/pull_binance.py first")
 
 
-def grid_backtest(px: pd.Series, g: float, K: int, fee: float = FEE,
-                   capital: float = 10000.0) -> pd.Series:
-    """Trailing grid (martingale-free). Anchor ratchets UP with price (no buys on
-    uptrends). When price drops g% below anchor -> buy 1 unit, set anchor to that
-    buy (ladder down into dips). Each held buy sells when price recovers g% above
-    its entry (+g per unit round trip minus 2 fees). Inventory capped at K units
-    (sustained downtrend bleed is bounded by K, not infinite).
+class GridBot:
+    """Stateful trailing grid (martingale-free). Shared by backtest and live so
+    the live paper engine has NO divergence from the backtest (the lesson of
+    app/backtest/faithful.py — backtest must mirror live exactly).
 
-    This is the realistic grid bot; the fixed-center bounded grid dies when price
-    trends away from the initial center. Trailing keeps the grid on the price."""
-    unit = capital / (K + 1)  # notional per rung; K+1 so K buys + cash reserve
-    open_buys: list[float] = []  # entry prices of held buys
-    cash = 0.0
-    anchor = float(px.iloc[0])
-    eq_vals = [capital]
-    for i in range(1, len(px)):
-        c = float(px.iloc[i])
-        # take profit: close any buy whose +g target hit
+    Anchor ratchets UP with price (no buys on uptrends). Price drops g% below
+    anchor -> buy 1 unit, ladder anchor down into the dip. Each held buy sells
+    when price recovers g% above its entry (+g - 2 fees per round trip). Inventory
+    capped at K units (bounded downtrend bleed). stop (optional, off by default —
+    §hardening showed it HURTS by cutting the bounce-harvest that is the edge):
+    flatten all on a max-DD breach, stay flat until a new equity peak.
+    """
+
+    def __init__(self, g: float, K: int, fee: float, capital: float = 10000.0,
+                 stop: float | None = None):
+        self.g, self.K, self.fee, self.capital, self.stop = g, K, fee, capital, stop
+        self.unit = capital / (K + 1)
+        self.open_buys: list[float] = []
+        self.cash = 0.0
+        self.anchor: float | None = None
+        self.peak = capital
+        self.flattened = False
+        self.equity = capital
+
+    def step(self, price: float) -> tuple[float, list[dict]]:
+        """Process one price tick. Returns (mark-to-market equity, fills_this_step)."""
+        if self.anchor is None:
+            self.anchor = price
+            self.equity = self.capital
+            return self.equity, []
+        fills = []
+        c = price
+        # take profit: close buys whose +g target hit
         still = []
-        for ep in open_buys:
-            if c >= ep * (1 + g):
-                cash += unit + (c / ep - 1) * unit - 2 * fee * unit  # +g - 2fee
+        for ep in self.open_buys:
+            if c >= ep * (1 + self.g):
+                self.cash += self.unit + (c / ep - 1) * self.unit - 2 * self.fee * self.unit
+                fills.append({"side": "sell", "entry": ep, "exit": c, "pnl": (c / ep - 1) * self.unit - 2 * self.fee * self.unit})
             else:
                 still.append(ep)
-        open_buys = still
-        # ladder buy: price dropped g% below anchor, inventory under cap
-        if c <= anchor * (1 - g) and len(open_buys) < K:
-            open_buys.append(c)
-            cash -= unit
-            anchor = c
-        # ratchet anchor up with price (so a small dip off a pump doesn't re-buy)
-        elif c > anchor:
-            anchor = c
-        # mark open inventory at close
-        mark = sum(unit * (c / ep - 1) for ep in open_buys)
-        eq_vals.append(capital + cash + len(open_buys) * unit + mark)
+        self.open_buys = still
+        # mark-to-market equity + drawdown stop
+        mark = sum(self.unit * (c / ep - 1) for ep in self.open_buys)
+        eq = self.capital + self.cash + len(self.open_buys) * self.unit + mark
+        self.peak = max(self.peak, eq)
+        if self.stop is not None and not self.flattened and eq < self.peak * (1 - self.stop):
+            for ep in self.open_buys:
+                self.cash += self.unit + (c / ep - 1) * self.unit - self.fee * self.unit
+                fills.append({"side": "stop_sell", "entry": ep, "exit": c, "pnl": (c / ep - 1) * self.unit - self.fee * self.unit})
+            self.open_buys = []
+            self.flattened = True
+            eq = self.capital + self.cash
+        if self.flattened and eq >= self.peak:
+            self.flattened = False
+            self.anchor = c
+        # ladder buy: dropped g% below anchor, under cap, not flattened
+        if (not self.flattened) and c <= self.anchor * (1 - self.g) and len(self.open_buys) < self.K:
+            self.open_buys.append(c)
+            self.cash -= self.unit
+            self.anchor = c
+            fills.append({"side": "buy", "entry": c, "qty_notional": self.unit})
+        elif c > self.anchor:
+            self.anchor = c
+        self.equity = eq
+        return eq, fills
+
+
+def grid_backtest(px: pd.Series, g: float, K: int, fee: float = FEE,
+                   capital: float = 10000.0, stop: float | None = None) -> pd.Series:
+    """Backtest the trailing grid via the shared GridBot (so backtest == live)."""
+    bot = GridBot(g, K, fee, capital, stop)
+    eq_vals = []
+    for i in range(len(px)):
+        eq, _ = bot.step(float(px.iloc[i]))
+        eq_vals.append(eq)
     return pd.Series(eq_vals, index=px.index)
 
 

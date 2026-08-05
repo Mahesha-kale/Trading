@@ -582,3 +582,85 @@ four prior edge classes (price strategies, ensemble, funding carry, macro)
 remain negative-OOS. Next step for the grid: paper deployment + forward
 validation against live fill quality; for microstructure: re-run when the WS
 feed is available and record ticks for a forward edge test.
+
+## §16. Grid hardening (pre-paper)
+
+`scripts/grid_harden.py` → `reports/grid_harden.json`. Three risk controls tested
+before paper deployment; the grid's `grid_backtest` was refactored into a stateful
+`GridBot` class shared by backtest AND live (the faithful-engine lesson: backtest
+must mirror live exactly, no divergence).
+
+**Rolling walk-forward re-tune** (tune g,K on expanding train, score next OOS
+window, 4 folds):
+
+| symbol | static OOS Sharpe | rolling mean OOS Sharpe |
+|--------|-------------------|------------------------|
+| BTC | 1.11 | **1.60** |
+| ETH | 0.83 | **1.15** |
+
+Periodic re-tuning IMPROVES OOS Sharpe (BTC +44%, ETH +39%). Live: re-tune g,K on
+a rolling recent-history window periodically.
+
+**Inventory-stop sweep** (flatten all open buys on a max-DD breach, stay flat
+until new peak):
+
+| symbol | stop=none | stop=0.15 | stop=0.20 | stop=0.25 |
+|--------|-----------|-----------|-----------|-----------|
+| BTC OOS sh | 1.11 | -0.35 | 1.11 | 1.11 |
+| ETH OOS sh | 0.83 | 0.11 | -0.36 | -0.43 |
+
+The stop HURTS. It flattens exactly when the grid should be holding inventory for
+the bounce — and the bounce-harvest IS the edge. Stopping cuts the edge and locks
+losses. The bounded K inventory IS the risk control; an additional drawdown stop
+is counterproductive on a mean-reverting grid. Do NOT add a stop.
+
+**Multi-symbol portfolio** (BTC + ETH grids, inverse-vol weights from train
+daily-return std, OOS):
+
+| | BTC | ETH | portfolio |
+|--|------|------|-----------|
+| OOS Sharpe | 1.11 | 0.83 | 1.05 |
+| OOS maxDD | -19% | -45% | -30% |
+| weights | — | — | BTC 0.6 / ETH 0.4 |
+| BTC-ETH daily corr | — | — | 0.67 |
+
+The portfolio does NOT beat BTC alone (Sharpe 1.05 ≈ 1.11, dd -30% WORSE than
+BTC's -19%). Correlation is high (0.67) so ETH adds little diversification and
+imports its larger drawdown. Single-symbol BTC grid is as good or better.
+
+**Hardened config: single BTC grid, g=2%/K=20 (or rolling-re-tuned), NO stop.**
+The extra controls don't help — the bounded trailing grid is already the right
+structure. Simpler than expected (ponytail validated: the controls were the
+slop). Deploy g=2% K=20 with periodic rolling re-tune; size K units ≤ capital, no
+leverage.
+
+## §17. Live paper grid runner + microstructure status
+
+**Live grid runner** (`scripts/grid_live.py`): streams CoinDCX price ticks (WS)
+and steps the SAME `GridBot` the backtest uses — forward validation of whether
+tick-by-tick live equity matches the 15m-close sim. Paper by construction
+(`GridBot` simulates fills, places no real orders; real paper orders would wrap
+`GridBot.step`'s fills in the REST order client later).
+
+WS is primary; the CoinDCX WS gateway returns HTTP 503 / handshake timeouts at
+build time, so the runner falls back to polling the latest 1m candle every 60s
+(coarser but live-forward). Verified: WS 503 → candle-poll fallback ran 2 cycles
+correctly (anchor set, ratcheted up on an uptick, no fills in a 75s rising window
+as expected — buys trigger on a 2% dip). Full forward validation (fills, equity
+drift vs sim) needs a multi-hour/multi-day run, ideally on the WS tick stream for
+fill-timing fidelity.
+
+**Microstructure** (`scripts/microstructure.py`, built in the prior branch):
+tick-rule CVD proxy. CoinDCX WS still 503 on retry — no change, still feed-
+blocked. Collector ready when the feed returns; first run should dump a raw
+`prices-futures` message to confirm `parse_price` field names.
+
+## Overall status (post §16-§17)
+
+Grid bot is the sprint's first and only positive-OOS edge, now hardened:
+rolling re-tune improves it (+44% BTC OOS Sharpe), inventory-stop and multi-
+symbol portfolio do NOT help (keep it simple, single BTC grid, no stop). A live
+paper runner is built and verified via candle-poll fallback; full forward
+validation pending a longer run + WS availability. Microstructure remains feed-
+blocked. Recommended next step: run `scripts/grid_live.py` for ≥24h on the WS
+stream (when back) to validate live equity vs the 15m sim before any live capital.
