@@ -1,27 +1,27 @@
 {
-  "symbol": "ETHUSDT",
+  "symbol": "BTCUSDT",
   "best_grid": {
     "g": 0.02,
-    "K": 10
+    "K": 20
   },
   "full": {
-    "sharpe": 1.03,
-    "max_dd": -0.301,
-    "cagr": 0.265,
-    "pf": 1.02,
+    "sharpe": 1.53,
+    "max_dd": -0.117,
+    "cagr": 0.234,
+    "pf": 1.03,
     "n": 90528,
-    "end_eq": 18364.1
+    "end_eq": 17215.1
   },
   "oos": {
-    "sharpe": 0.83,
-    "max_dd": -0.454,
-    "cagr": 0.314,
-    "pf": 1.01,
+    "sharpe": 1.08,
+    "max_dd": -0.173,
+    "cagr": 0.256,
+    "pf": 1.03,
     "n": 27159,
-    "end_eq": 12356.1
+    "end_eq": 11932.2
   },
-  "buyhold_full": 2.0952,
-  "buyhold_oos": 0.3967,
+  "buyhold_full": 6.0046,
+  "buyhold_oos": 0.7127,
   "fee": 0.001,
   "verdict": "GRID EDGE OOS"
 }
