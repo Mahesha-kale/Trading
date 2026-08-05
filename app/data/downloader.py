@@ -56,10 +56,14 @@ async def _upsert(pair: str, timeframe: str, rows: list[dict]) -> None:
         })
     if not values:
         return
+    # asyncpg caps query params at 32767; 8 cols/row -> chunk at 2000 rows so
+    # 1m/5m windows (43200/8640 rows) don't blow the limit. 15m worked by luck.
     async with session_scope() as s:
-        stmt = pg_insert(Candle).values(values)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "ts"])
-        await s.execute(stmt)
+        for i in range(0, len(values), 2000):
+            chunk = values[i:i + 2000]
+            stmt = pg_insert(Candle).values(chunk)
+            stmt = stmt.on_conflict_do_nothing(index_elements=["symbol", "timeframe", "ts"])
+            await s.execute(stmt)
 
 
 async def load_candles(pair: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:

@@ -8,8 +8,14 @@ from app.strategy.breakout import Breakout
 from app.strategy.ema_cross import EmaCross
 from app.strategy.macd import MacdCross
 from app.strategy.rsi_reversal import RsiReversal
+from app.strategy.batch import (AdxTrend, CciReversion, DonchianBreakout,
+                                 EmaPullback, FairValueGap, IchimokuBreakout,
+                                 KeltnerMeanReversion, LiquiditySweep,
+                                 ObvDivergence, OpeningRangeBreakout, PsarTrend,
+                                 StochrsiReversal, VwapPullback, RegimeGate)
 from app.strategy.supertrend import SupertrendStrategy
 from app.strategy.vwap import VwapReclaim
+from app.strategy.wyckoff import Wyckoff
 
 REGISTRY: dict[str, type[BaseStrategy]] = {
     EmaCross.meta.name: EmaCross,
@@ -20,6 +26,21 @@ REGISTRY: dict[str, type[BaseStrategy]] = {
     BollingerReversion.meta.name: BollingerReversion,
     Breakout.meta.name: Breakout,
     AtrTrend.meta.name: AtrTrend,
+    Wyckoff.meta.name: Wyckoff,
+    LiquiditySweep.meta.name: LiquiditySweep,
+    FairValueGap.meta.name: FairValueGap,
+    OpeningRangeBreakout.meta.name: OpeningRangeBreakout,
+    VwapPullback.meta.name: VwapPullback,
+    KeltnerMeanReversion.meta.name: KeltnerMeanReversion,
+    StochrsiReversal.meta.name: StochrsiReversal,
+    CciReversion.meta.name: CciReversion,
+    AdxTrend.meta.name: AdxTrend,
+    DonchianBreakout.meta.name: DonchianBreakout,
+    IchimokuBreakout.meta.name: IchimokuBreakout,
+    PsarTrend.meta.name: PsarTrend,
+    ObvDivergence.meta.name: ObvDivergence,
+    EmaPullback.meta.name: EmaPullback,
+    RegimeGate.meta.name: RegimeGate,
 }
 
 

@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     # only auto-start engine in paper/live; test mode = API + data only
     if settings.trading_mode in ("paper", "live"):
         global _live_engine, _ws
-        strat = get_strategy("ema_cross")
+        strat = get_strategy(settings.default_strategy)
         risk = RiskManager(equity=10000.0)
         _live_engine = TradingEngine(strat, risk)
         await _live_engine.seed_buffer()  # prefill indicators from DB (no warmup wait)

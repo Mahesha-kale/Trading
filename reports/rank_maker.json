@@ -1,0 +1,1971 @@
+[
+  {
+    "name": "liquidity_sweep",
+    "tf": "5m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "atr_mult": 2.5,
+      "sweep_pen": 0.002
+    },
+    "score": 10.32,
+    "full": {
+      "net_profit": -561.7676,
+      "gross_profit": 650.2653,
+      "gross_loss": 1212.0329,
+      "win_rate": 0.3571,
+      "loss_rate": 0.6429,
+      "profit_factor": 0.5365,
+      "max_drawdown": 0.0862,
+      "sharpe": -2.6447,
+      "sortino": -0.1458,
+      "calmar": -1.8443,
+      "avg_win": 65.0265,
+      "avg_loss": 67.3352,
+      "largest_win": 196.7137,
+      "largest_loss": -104.5132,
+      "expectancy": -20.0631,
+      "recovery_factor": -0.6515,
+      "avg_duration_h": 1.375,
+      "consecutive_wins": 2,
+      "consecutive_losses": 4,
+      "monthly_return": 0.0,
+      "annualized_return": -0.159,
+      "return_on_capital": -0.0562,
+      "num_trades": 28
+    },
+    "oos": {
+      "net_profit": -143.5365,
+      "gross_profit": 930.7172,
+      "gross_loss": 1074.2537,
+      "win_rate": 0.2963,
+      "loss_rate": 0.7037,
+      "profit_factor": 0.8664,
+      "max_drawdown": 0.0712,
+      "sharpe": -1.6208,
+      "sortino": -0.2146,
+      "calmar": -2.967,
+      "avg_win": 116.3396,
+      "avg_loss": 56.5397,
+      "largest_win": 273.5607,
+      "largest_loss": -111.7926,
+      "expectancy": -5.3162,
+      "recovery_factor": -0.2016,
+      "avg_duration_h": 2.321,
+      "consecutive_wins": 1,
+      "consecutive_losses": 6,
+      "monthly_return": -0.024,
+      "annualized_return": -0.2113,
+      "return_on_capital": -0.0144,
+      "num_trades": 27
+    },
+    "mc": {
+      "mc_median_net": -573.0868,
+      "mc_p5_net": -1165.9366,
+      "mc_p95_net": 167.1706,
+      "mc_prob_profit": 0.086,
+      "mc_median_max_dd": -0.0691,
+      "mc_worst_max_dd": -0.1578,
+      "mc_median_consec_loss": 6.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -539.7322664298362,
+        "trades": 40
+      },
+      "bear": {
+        "net": -502.14678942043633,
+        "trades": 13
+      },
+      "sideways": {
+        "net": 72.08580118002328,
+        "trades": 13
+      }
+    },
+    "trades_full": 28
+  },
+  {
+    "name": "regime_gate",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "bull": "stochrsi_reversal",
+      "adx_thresh": 15,
+      "atr_mult": 3.0
+    },
+    "score": 8.96,
+    "full": {
+      "net_profit": -550.4437,
+      "gross_profit": 997.4017,
+      "gross_loss": 1547.8454,
+      "win_rate": 0.3846,
+      "loss_rate": 0.6154,
+      "profit_factor": 0.6444,
+      "max_drawdown": 0.1015,
+      "sharpe": -1.6276,
+      "sortino": -0.1124,
+      "calmar": -0.8423,
+      "avg_win": 66.4934,
+      "avg_loss": 64.4936,
+      "largest_win": 191.7293,
+      "largest_loss": -109.8653,
+      "expectancy": -14.1139,
+      "recovery_factor": -0.5423,
+      "avg_duration_h": 6.0705,
+      "consecutive_wins": 4,
+      "consecutive_losses": 8,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0855,
+      "return_on_capital": -0.055,
+      "num_trades": 39
+    },
+    "oos": {
+      "net_profit": -531.6579,
+      "gross_profit": 1292.5398,
+      "gross_loss": 1824.1976,
+      "win_rate": 0.3636,
+      "loss_rate": 0.6364,
+      "profit_factor": 0.7086,
+      "max_drawdown": 0.0869,
+      "sharpe": -2.5322,
+      "sortino": -0.3603,
+      "calmar": -2.7488,
+      "avg_win": 80.7837,
+      "avg_loss": 65.1499,
+      "largest_win": 194.0517,
+      "largest_loss": -106.4731,
+      "expectancy": -12.0831,
+      "recovery_factor": -0.612,
+      "avg_duration_h": 7.4545,
+      "consecutive_wins": 3,
+      "consecutive_losses": 8,
+      "monthly_return": -0.0137,
+      "annualized_return": -0.2388,
+      "return_on_capital": -0.0532,
+      "num_trades": 44
+    },
+    "mc": {
+      "mc_median_net": -562.9352,
+      "mc_p5_net": -1343.5135,
+      "mc_p95_net": 348.9551,
+      "mc_prob_profit": 0.174,
+      "mc_median_max_dd": -0.0761,
+      "mc_worst_max_dd": -0.1985,
+      "mc_median_consec_loss": 6.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -573.5188674584156,
+        "trades": 31
+      },
+      "bear": {
+        "net": -542.0690522356844,
+        "trades": 12
+      },
+      "sideways": {
+        "net": 2000.6668499577083,
+        "trades": 136
+      }
+    },
+    "trades_full": 39
+  },
+  {
+    "name": "ema_pullback",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "tol_atr": 0.4,
+      "atr_mult": 4.0
+    },
+    "score": 8.27,
+    "full": {
+      "net_profit": -509.5606,
+      "gross_profit": 2035.6371,
+      "gross_loss": 2545.1977,
+      "win_rate": 0.4242,
+      "loss_rate": 0.5758,
+      "profit_factor": 0.7998,
+      "max_drawdown": 0.101,
+      "sharpe": -1.1953,
+      "sortino": -0.1526,
+      "calmar": -0.8462,
+      "avg_win": 72.7013,
+      "avg_loss": 66.9789,
+      "largest_win": 258.0861,
+      "largest_loss": -109.1612,
+      "expectancy": -7.7206,
+      "recovery_factor": -0.5043,
+      "avg_duration_h": 9.7159,
+      "consecutive_wins": 9,
+      "consecutive_losses": 8,
+      "monthly_return": -0.0035,
+      "annualized_return": -0.0855,
+      "return_on_capital": -0.051,
+      "num_trades": 66
+    },
+    "oos": {
+      "net_profit": -537.2856,
+      "gross_profit": 667.4298,
+      "gross_loss": 1204.7153,
+      "win_rate": 0.3438,
+      "loss_rate": 0.6562,
+      "profit_factor": 0.554,
+      "max_drawdown": 0.092,
+      "sharpe": -3.3119,
+      "sortino": -0.4398,
+      "calmar": -2.4443,
+      "avg_win": 60.6754,
+      "avg_loss": 57.3674,
+      "largest_win": 136.0637,
+      "largest_loss": -102.8615,
+      "expectancy": -16.7902,
+      "recovery_factor": -0.5838,
+      "avg_duration_h": 10.1797,
+      "consecutive_wins": 3,
+      "consecutive_losses": 6,
+      "monthly_return": -0.0195,
+      "annualized_return": -0.2249,
+      "return_on_capital": -0.0537,
+      "num_trades": 32
+    },
+    "mc": {
+      "mc_median_net": -522.8921,
+      "mc_p5_net": -1517.7461,
+      "mc_p95_net": 623.5649,
+      "mc_prob_profit": 0.222,
+      "mc_median_max_dd": -0.0939,
+      "mc_worst_max_dd": -0.276,
+      "mc_median_consec_loss": 6.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -571.8703255216167,
+        "trades": 52
+      },
+      "bear": {
+        "net": 587.2726469284738,
+        "trades": 83
+      },
+      "sideways": {
+        "net": 1950.633201639978,
+        "trades": 27
+      }
+    },
+    "trades_full": 66
+  },
+  {
+    "name": "stochrsi_reversal",
+    "tf": "5m",
+    "kind": "reversion",
+    "deployable": true,
+    "params": {
+      "atr_mult": 3.0
+    },
+    "score": 8.24,
+    "full": {
+      "net_profit": -571.8932,
+      "gross_profit": 4528.0502,
+      "gross_loss": 5099.9434,
+      "win_rate": 0.8392,
+      "loss_rate": 0.1608,
+      "profit_factor": 0.8879,
+      "max_drawdown": 0.1531,
+      "sharpe": -2.1545,
+      "sortino": -0.2642,
+      "calmar": -1.5741,
+      "avg_win": 17.3489,
+      "avg_loss": 101.9989,
+      "largest_win": 55.362,
+      "largest_loss": -109.0032,
+      "expectancy": -1.8389,
+      "recovery_factor": -0.3735,
+      "avg_duration_h": 5.6559,
+      "consecutive_wins": 17,
+      "consecutive_losses": 3,
+      "monthly_return": -0.0188,
+      "annualized_return": -0.241,
+      "return_on_capital": -0.0572,
+      "num_trades": 311
+    },
+    "oos": {
+      "net_profit": -182.0805,
+      "gross_profit": 2244.8779,
+      "gross_loss": 2426.9584,
+      "win_rate": 0.858,
+      "loss_rate": 0.142,
+      "profit_factor": 0.925,
+      "max_drawdown": 0.0642,
+      "sharpe": -2.2929,
+      "sortino": -0.3778,
+      "calmar": -4.8795,
+      "avg_win": 15.4819,
+      "avg_loss": 101.1233,
+      "largest_win": 63.892,
+      "largest_loss": -103.4476,
+      "expectancy": -1.0774,
+      "recovery_factor": -0.2838,
+      "avg_duration_h": 5.7944,
+      "consecutive_wins": 24,
+      "consecutive_losses": 2,
+      "monthly_return": -0.0117,
+      "annualized_return": -0.3131,
+      "return_on_capital": -0.0182,
+      "num_trades": 169
+    },
+    "mc": {
+      "mc_median_net": -488.8478,
+      "mc_p5_net": -1875.0792,
+      "mc_p95_net": 750.3125,
+      "mc_prob_profit": 0.242,
+      "mc_median_max_dd": -0.1063,
+      "mc_worst_max_dd": -0.3597,
+      "mc_median_consec_loss": 3.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": 92.02530520019504,
+        "trades": 274
+      },
+      "bear": {
+        "net": -504.44235973800915,
+        "trades": 103
+      },
+      "sideways": {
+        "net": -509.66312865427767,
+        "trades": 120
+      }
+    },
+    "trades_full": 311
+  },
+  {
+    "name": "obv_divergence",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "swing": 40,
+      "atr_mult": 4.0
+    },
+    "score": 8.06,
+    "full": {
+      "net_profit": -535.5881,
+      "gross_profit": 751.1941,
+      "gross_loss": 1286.7822,
+      "win_rate": 0.2414,
+      "loss_rate": 0.7586,
+      "profit_factor": 0.5838,
+      "max_drawdown": 0.0978,
+      "sharpe": -1.7115,
+      "sortino": -0.1305,
+      "calmar": -0.7875,
+      "avg_win": 107.3134,
+      "avg_loss": 58.4901,
+      "largest_win": 172.933,
+      "largest_loss": -109.8539,
+      "expectancy": -18.4686,
+      "recovery_factor": -0.5479,
+      "avg_duration_h": 10.2414,
+      "consecutive_wins": 2,
+      "consecutive_losses": 10,
+      "monthly_return": 0.0,
+      "annualized_return": -0.077,
+      "return_on_capital": -0.0536,
+      "num_trades": 29
+    },
+    "oos": {
+      "net_profit": -544.9449,
+      "gross_profit": 1020.8263,
+      "gross_loss": 1565.7712,
+      "win_rate": 0.3226,
+      "loss_rate": 0.6774,
+      "profit_factor": 0.652,
+      "max_drawdown": 0.0943,
+      "sharpe": -2.2483,
+      "sortino": -0.3828,
+      "calmar": -2.3567,
+      "avg_win": 102.0826,
+      "avg_loss": 74.5605,
+      "largest_win": 286.482,
+      "largest_loss": -105.5832,
+      "expectancy": -17.5789,
+      "recovery_factor": -0.5782,
+      "avg_duration_h": 14.871,
+      "consecutive_wins": 2,
+      "consecutive_losses": 8,
+      "monthly_return": -0.0128,
+      "annualized_return": -0.2221,
+      "return_on_capital": -0.0545,
+      "num_trades": 31
+    },
+    "mc": {
+      "mc_median_net": -518.2056,
+      "mc_p5_net": -1178.0855,
+      "mc_p95_net": 182.7882,
+      "mc_prob_profit": 0.106,
+      "mc_median_max_dd": -0.0711,
+      "mc_worst_max_dd": -0.1849,
+      "mc_median_consec_loss": 8.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": 105.78977749673598,
+        "trades": 201
+      },
+      "bear": {
+        "net": -518.9289933710664,
+        "trades": 33
+      },
+      "sideways": {
+        "net": 1547.1413728369976,
+        "trades": 80
+      }
+    },
+    "trades_full": 29
+  },
+  {
+    "name": "donchian_breakout",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "lookback": 50,
+      "atr_mult": 4.0
+    },
+    "score": 6.5,
+    "full": {
+      "net_profit": -504.9304,
+      "gross_profit": 1613.7785,
+      "gross_loss": 2118.7088,
+      "win_rate": 0.4242,
+      "loss_rate": 0.5758,
+      "profit_factor": 0.7617,
+      "max_drawdown": 0.0919,
+      "sharpe": -1.4207,
+      "sortino": -0.174,
+      "calmar": -0.9141,
+      "avg_win": 57.6349,
+      "avg_loss": 55.7555,
+      "largest_win": 158.4886,
+      "largest_loss": -111.4263,
+      "expectancy": -7.6505,
+      "recovery_factor": -0.5495,
+      "avg_duration_h": 11.8295,
+      "consecutive_wins": 5,
+      "consecutive_losses": 5,
+      "monthly_return": -0.006,
+      "annualized_return": -0.084,
+      "return_on_capital": -0.0505,
+      "num_trades": 66
+    },
+    "oos": {
+      "net_profit": -558.388,
+      "gross_profit": 484.4386,
+      "gross_loss": 1042.8266,
+      "win_rate": 0.2308,
+      "loss_rate": 0.7692,
+      "profit_factor": 0.4645,
+      "max_drawdown": 0.0791,
+      "sharpe": -3.5242,
+      "sortino": -0.4868,
+      "calmar": -2.7979,
+      "avg_win": 80.7398,
+      "avg_loss": 52.1413,
+      "largest_win": 185.2204,
+      "largest_loss": -105.7318,
+      "expectancy": -21.4765,
+      "recovery_factor": -0.7056,
+      "avg_duration_h": 12.3558,
+      "consecutive_wins": 1,
+      "consecutive_losses": 6,
+      "monthly_return": -0.0158,
+      "annualized_return": -0.2214,
+      "return_on_capital": -0.0558,
+      "num_trades": 26
+    },
+    "mc": {
+      "mc_median_net": -481.7269,
+      "mc_p5_net": -1327.407,
+      "mc_p95_net": 364.3928,
+      "mc_prob_profit": 0.178,
+      "mc_median_max_dd": -0.0785,
+      "mc_worst_max_dd": -0.197,
+      "mc_median_consec_loss": 6.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -511.02574718289156,
+        "trades": 29
+      },
+      "bear": {
+        "net": 261.17463028550264,
+        "trades": 84
+      },
+      "sideways": {
+        "net": -500.98193288842174,
+        "trades": 13
+      }
+    },
+    "trades_full": 66
+  },
+  {
+    "name": "psar_trend",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "atr_mult": 4.0
+    },
+    "score": 5.02,
+    "full": {
+      "net_profit": -510.944,
+      "gross_profit": 498.521,
+      "gross_loss": 1009.4649,
+      "win_rate": 0.2174,
+      "loss_rate": 0.7826,
+      "profit_factor": 0.4938,
+      "max_drawdown": 0.0875,
+      "sharpe": -1.8833,
+      "sortino": -0.133,
+      "calmar": -0.818,
+      "avg_win": 99.7042,
+      "avg_loss": 56.0814,
+      "largest_win": 140.8132,
+      "largest_loss": -109.9987,
+      "expectancy": -22.215,
+      "recovery_factor": -0.5842,
+      "avg_duration_h": 11.8804,
+      "consecutive_wins": 1,
+      "consecutive_losses": 11,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0715,
+      "return_on_capital": -0.0511,
+      "num_trades": 23
+    },
+    "oos": {
+      "net_profit": -514.3555,
+      "gross_profit": 884.2517,
+      "gross_loss": 1398.6073,
+      "win_rate": 0.3438,
+      "loss_rate": 0.6562,
+      "profit_factor": 0.6322,
+      "max_drawdown": 0.0868,
+      "sharpe": -2.583,
+      "sortino": -0.4184,
+      "calmar": -2.4712,
+      "avg_win": 80.3865,
+      "avg_loss": 66.6003,
+      "largest_win": 196.1867,
+      "largest_loss": -102.2203,
+      "expectancy": -16.0736,
+      "recovery_factor": -0.5924,
+      "avg_duration_h": 11.9219,
+      "consecutive_wins": 2,
+      "consecutive_losses": 6,
+      "monthly_return": -0.0159,
+      "annualized_return": -0.2146,
+      "return_on_capital": -0.0514,
+      "num_trades": 32
+    },
+    "mc": {
+      "mc_median_net": -542.3294,
+      "mc_p5_net": -1033.9294,
+      "mc_p95_net": 109.7871,
+      "mc_prob_profit": 0.086,
+      "mc_median_max_dd": -0.0652,
+      "mc_worst_max_dd": -0.1365,
+      "mc_median_consec_loss": 8.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -579.6613427472348,
+        "trades": 196
+      },
+      "bear": {
+        "net": -548.0515337515776,
+        "trades": 41
+      },
+      "sideways": {
+        "net": 1742.5938070263946,
+        "trades": 75
+      }
+    },
+    "trades_full": 23
+  },
+  {
+    "name": "adx_trend",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "adx_thresh": 20,
+      "atr_mult": 3.0
+    },
+    "score": 4.81,
+    "full": {
+      "net_profit": -562.4123,
+      "gross_profit": 524.5045,
+      "gross_loss": 1086.9168,
+      "win_rate": 0.24,
+      "loss_rate": 0.76,
+      "profit_factor": 0.4826,
+      "max_drawdown": 0.0968,
+      "sharpe": -1.9342,
+      "sortino": -0.1285,
+      "calmar": -0.8349,
+      "avg_win": 87.4174,
+      "avg_loss": 57.2061,
+      "largest_win": 190.8587,
+      "largest_loss": -101.9286,
+      "expectancy": -22.4965,
+      "recovery_factor": -0.581,
+      "avg_duration_h": 6.71,
+      "consecutive_wins": 3,
+      "consecutive_losses": 11,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0808,
+      "return_on_capital": -0.0562,
+      "num_trades": 25
+    },
+    "oos": {
+      "net_profit": -565.9293,
+      "gross_profit": 1024.1904,
+      "gross_loss": 1590.1197,
+      "win_rate": 0.3143,
+      "loss_rate": 0.6857,
+      "profit_factor": 0.6441,
+      "max_drawdown": 0.0866,
+      "sharpe": -2.7261,
+      "sortino": -0.3824,
+      "calmar": -2.7539,
+      "avg_win": 93.1082,
+      "avg_loss": 66.255,
+      "largest_win": 179.1491,
+      "largest_loss": -99.7221,
+      "expectancy": -16.1694,
+      "recovery_factor": -0.6531,
+      "avg_duration_h": 7.1643,
+      "consecutive_wins": 2,
+      "consecutive_losses": 6,
+      "monthly_return": -0.0107,
+      "annualized_return": -0.2386,
+      "return_on_capital": -0.0566,
+      "num_trades": 35
+    },
+    "mc": {
+      "mc_median_net": -588.109,
+      "mc_p5_net": -1169.0644,
+      "mc_p95_net": 111.362,
+      "mc_prob_profit": 0.072,
+      "mc_median_max_dd": -0.0718,
+      "mc_worst_max_dd": -0.1601,
+      "mc_median_consec_loss": 8.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -507.96280799814525,
+        "trades": 17
+      },
+      "bear": {
+        "net": -563.581455073521,
+        "trades": 11
+      },
+      "sideways": {
+        "net": -593.4392501564516,
+        "trades": 39
+      }
+    },
+    "trades_full": 25
+  },
+  {
+    "name": "vwap_pullback",
+    "tf": "5m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "tol_atr": 0.7,
+      "atr_mult": 2.5
+    },
+    "score": 4.05,
+    "full": {
+      "net_profit": -526.5128,
+      "gross_profit": 1025.7129,
+      "gross_loss": 1552.2257,
+      "win_rate": 0.35,
+      "loss_rate": 0.65,
+      "profit_factor": 0.6608,
+      "max_drawdown": 0.0717,
+      "sharpe": -2.0895,
+      "sortino": -0.1314,
+      "calmar": -2.2523,
+      "avg_win": 73.2652,
+      "avg_loss": 59.701,
+      "largest_win": 223.3113,
+      "largest_loss": -109.2835,
+      "expectancy": -13.1628,
+      "recovery_factor": -0.7347,
+      "avg_duration_h": 0.8688,
+      "consecutive_wins": 3,
+      "consecutive_losses": 6,
+      "monthly_return": 0.0,
+      "annualized_return": -0.1614,
+      "return_on_capital": -0.0527,
+      "num_trades": 40
+    },
+    "oos": {
+      "net_profit": -532.6913,
+      "gross_profit": 331.2988,
+      "gross_loss": 863.9901,
+      "win_rate": 0.25,
+      "loss_rate": 0.75,
+      "profit_factor": 0.3835,
+      "max_drawdown": 0.0623,
+      "sharpe": -5.3093,
+      "sortino": -0.3663,
+      "calmar": -6.5284,
+      "avg_win": 82.8247,
+      "avg_loss": 71.9992,
+      "largest_win": 139.9762,
+      "largest_loss": -115.9312,
+      "expectancy": -33.2932,
+      "recovery_factor": -0.8562,
+      "avg_duration_h": 1.1042,
+      "consecutive_wins": 2,
+      "consecutive_losses": 5,
+      "monthly_return": 0.0,
+      "annualized_return": -0.4065,
+      "return_on_capital": -0.0533,
+      "num_trades": 16
+    },
+    "mc": {
+      "mc_median_net": -501.7732,
+      "mc_p5_net": -1292.2407,
+      "mc_p95_net": 272.1888,
+      "mc_prob_profit": 0.144,
+      "mc_median_max_dd": -0.0748,
+      "mc_worst_max_dd": -0.2002,
+      "mc_median_consec_loss": 7.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -550.6705274567071,
+        "trades": 67
+      },
+      "bear": {
+        "net": -529.0935380926943,
+        "trades": 24
+      },
+      "sideways": {
+        "net": 283.77103817683803,
+        "trades": 147
+      }
+    },
+    "trades_full": 40
+  },
+  {
+    "name": "opening_range_breakout",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "range_bars": 3,
+      "atr_mult": 4.0
+    },
+    "score": 3.85,
+    "full": {
+      "net_profit": -532.7108,
+      "gross_profit": 336.4953,
+      "gross_loss": 869.2061,
+      "win_rate": 0.2222,
+      "loss_rate": 0.7778,
+      "profit_factor": 0.3871,
+      "max_drawdown": 0.0774,
+      "sharpe": -1.9714,
+      "sortino": -0.1092,
+      "calmar": -0.9131,
+      "avg_win": 84.1238,
+      "avg_loss": 62.0862,
+      "largest_win": 152.7686,
+      "largest_loss": -115.7046,
+      "expectancy": -29.595,
+      "recovery_factor": -0.6885,
+      "avg_duration_h": 10.1111,
+      "consecutive_wins": 1,
+      "consecutive_losses": 5,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0707,
+      "return_on_capital": -0.0533,
+      "num_trades": 18
+    },
+    "oos": {
+      "net_profit": -508.2331,
+      "gross_profit": 961.8879,
+      "gross_loss": 1470.1209,
+      "win_rate": 0.3125,
+      "loss_rate": 0.6875,
+      "profit_factor": 0.6543,
+      "max_drawdown": 0.0774,
+      "sharpe": -2.4158,
+      "sortino": -0.3878,
+      "calmar": -2.7886,
+      "avg_win": 96.1888,
+      "avg_loss": 66.8237,
+      "largest_win": 214.2525,
+      "largest_loss": -106.3476,
+      "expectancy": -15.8823,
+      "recovery_factor": -0.6564,
+      "avg_duration_h": 10.9922,
+      "consecutive_wins": 2,
+      "consecutive_losses": 8,
+      "monthly_return": -0.0125,
+      "annualized_return": -0.2159,
+      "return_on_capital": -0.0508,
+      "num_trades": 32
+    },
+    "mc": {
+      "mc_median_net": -511.7588,
+      "mc_p5_net": -1052.6968,
+      "mc_p95_net": 1.3641,
+      "mc_prob_profit": 0.05,
+      "mc_median_max_dd": -0.0594,
+      "mc_worst_max_dd": -0.1228,
+      "mc_median_consec_loss": 7.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -502.99630593650505,
+        "trades": 141
+      },
+      "bear": {
+        "net": -554.5443258009126,
+        "trades": 36
+      },
+      "sideways": {
+        "net": 298.6021541192098,
+        "trades": 85
+      }
+    },
+    "trades_full": 18
+  },
+  {
+    "name": "keltner_mr",
+    "tf": "5m",
+    "kind": "reversion",
+    "deployable": true,
+    "params": {
+      "mult": 2.2,
+      "atr_mult": 2.0
+    },
+    "score": 1.27,
+    "full": {
+      "net_profit": -508.3969,
+      "gross_profit": 332.9878,
+      "gross_loss": 841.3847,
+      "win_rate": 0.3077,
+      "loss_rate": 0.6923,
+      "profit_factor": 0.3958,
+      "max_drawdown": 0.0719,
+      "sharpe": -3.2127,
+      "sortino": -0.1508,
+      "calmar": -1.8538,
+      "avg_win": 27.749,
+      "avg_loss": 31.1624,
+      "largest_win": 50.2349,
+      "largest_loss": -104.621,
+      "expectancy": -13.0358,
+      "recovery_factor": -0.7069,
+      "avg_duration_h": 4.6197,
+      "consecutive_wins": 5,
+      "consecutive_losses": 14,
+      "monthly_return": 0.0,
+      "annualized_return": -0.1333,
+      "return_on_capital": -0.0508,
+      "num_trades": 39
+    },
+    "oos": {
+      "net_profit": -501.7428,
+      "gross_profit": 288.7414,
+      "gross_loss": 790.4842,
+      "win_rate": 0.2571,
+      "loss_rate": 0.7429,
+      "profit_factor": 0.3653,
+      "max_drawdown": 0.0572,
+      "sharpe": -4.902,
+      "sortino": -0.3996,
+      "calmar": -6.4553,
+      "avg_win": 32.0824,
+      "avg_loss": 30.4032,
+      "largest_win": 152.8976,
+      "largest_loss": -103.085,
+      "expectancy": -14.3355,
+      "recovery_factor": -0.8775,
+      "avg_duration_h": 3.0571,
+      "consecutive_wins": 3,
+      "consecutive_losses": 8,
+      "monthly_return": 0.0,
+      "annualized_return": -0.3691,
+      "return_on_capital": -0.0502,
+      "num_trades": 35
+    },
+    "mc": {
+      "mc_median_net": -501.9594,
+      "mc_p5_net": -1003.5629,
+      "mc_p95_net": -99.2221,
+      "mc_prob_profit": 0.026,
+      "mc_median_max_dd": -0.0549,
+      "mc_worst_max_dd": -0.1404,
+      "mc_median_consec_loss": 7.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -506.75595515371845,
+        "trades": 90
+      },
+      "bear": {
+        "net": -508.18552934854773,
+        "trades": 46
+      },
+      "sideways": {
+        "net": -552.8905849913339,
+        "trades": 97
+      }
+    },
+    "trades_full": 39
+  },
+  {
+    "name": "ichimoku_breakout",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "atr_mult": 4.0
+    },
+    "score": 0.01,
+    "full": {
+      "net_profit": -572.7378,
+      "gross_profit": 267.6898,
+      "gross_loss": 840.4276,
+      "win_rate": 0.3,
+      "loss_rate": 0.7,
+      "profit_factor": 0.3185,
+      "max_drawdown": 0.0857,
+      "sharpe": -2.5101,
+      "sortino": -0.1468,
+      "calmar": -0.9229,
+      "avg_win": 44.615,
+      "avg_loss": 60.0305,
+      "largest_win": 144.6263,
+      "largest_loss": -117.9878,
+      "expectancy": -28.6369,
+      "recovery_factor": -0.6683,
+      "avg_duration_h": 9.3375,
+      "consecutive_wins": 2,
+      "consecutive_losses": 6,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0791,
+      "return_on_capital": -0.0573,
+      "num_trades": 20
+    },
+    "oos": {
+      "net_profit": -590.9108,
+      "gross_profit": 594.5092,
+      "gross_loss": 1185.4199,
+      "win_rate": 0.2917,
+      "loss_rate": 0.7083,
+      "profit_factor": 0.5015,
+      "max_drawdown": 0.0779,
+      "sharpe": -3.3933,
+      "sortino": -0.425,
+      "calmar": -2.9932,
+      "avg_win": 84.9299,
+      "avg_loss": 69.7306,
+      "largest_win": 136.9949,
+      "largest_loss": -100.3037,
+      "expectancy": -24.6213,
+      "recovery_factor": -0.7586,
+      "avg_duration_h": 10.6771,
+      "consecutive_wins": 2,
+      "consecutive_losses": 5,
+      "monthly_return": -0.0147,
+      "annualized_return": -0.2331,
+      "return_on_capital": -0.0591,
+      "num_trades": 24
+    },
+    "mc": {
+      "mc_median_net": -560.2607,
+      "mc_p5_net": -1019.9007,
+      "mc_p95_net": -73.3935,
+      "mc_prob_profit": 0.024,
+      "mc_median_max_dd": -0.0601,
+      "mc_worst_max_dd": -0.1206,
+      "mc_median_consec_loss": 6.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -501.77079370320087,
+        "trades": 74
+      },
+      "bear": {
+        "net": -506.26814849260865,
+        "trades": 6
+      },
+      "sideways": {
+        "net": -508.93670691779545,
+        "trades": 20
+      }
+    },
+    "trades_full": 20
+  },
+  {
+    "name": "wyckoff",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": true,
+    "params": {
+      "sos_window": 80,
+      "atr_mult": 3.0
+    },
+    "score": -1.0,
+    "full": {
+      "net_profit": -550.3502,
+      "gross_profit": 113.8691,
+      "gross_loss": 664.2194,
+      "win_rate": 0.1429,
+      "loss_rate": 0.8571,
+      "profit_factor": 0.1714,
+      "max_drawdown": 0.0598,
+      "sharpe": -2.7561,
+      "sortino": -0.1146,
+      "calmar": -1.1032,
+      "avg_win": 56.9346,
+      "avg_loss": 55.3516,
+      "largest_win": 59.8894,
+      "largest_loss": -92.0867,
+      "expectancy": -39.3107,
+      "recovery_factor": -0.9208,
+      "avg_duration_h": 4.625,
+      "consecutive_wins": 1,
+      "consecutive_losses": 7,
+      "monthly_return": -0.0043,
+      "annualized_return": -0.0659,
+      "return_on_capital": -0.055,
+      "num_trades": 14
+    },
+    "oos": {
+      "net_profit": -301.563,
+      "gross_profit": 0,
+      "gross_loss": 301.563,
+      "win_rate": 0.0,
+      "loss_rate": 1.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0312,
+      "sharpe": -3.8188,
+      "sortino": -0.1511,
+      "calmar": -3.5375,
+      "avg_win": 0,
+      "avg_loss": 75.3907,
+      "largest_win": 0,
+      "largest_loss": -99.0703,
+      "expectancy": -75.3907,
+      "recovery_factor": -0.9669,
+      "avg_duration_h": 3.9375,
+      "consecutive_wins": 0,
+      "consecutive_losses": 4,
+      "monthly_return": -0.0078,
+      "annualized_return": -0.1103,
+      "return_on_capital": -0.0302,
+      "num_trades": 4
+    },
+    "mc": {
+      "mc_median_net": -565.3817,
+      "mc_p5_net": -799.629,
+      "mc_p95_net": -268.8988,
+      "mc_prob_profit": 0.004,
+      "mc_median_max_dd": -0.0548,
+      "mc_worst_max_dd": -0.0897,
+      "mc_median_consec_loss": 8.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": 82.05529974289774,
+        "trades": 9
+      },
+      "bear": {
+        "net": -342.8381531916567,
+        "trades": 21
+      },
+      "sideways": {
+        "net": -62.5992853154215,
+        "trades": 1
+      }
+    },
+    "trades_full": 14
+  },
+  {
+    "name": "cci_reversion",
+    "tf": "5m",
+    "kind": "reversion",
+    "deployable": true,
+    "params": {
+      "period": 20,
+      "atr_mult": 2.0
+    },
+    "score": -1.16,
+    "full": {
+      "net_profit": -530.0034,
+      "gross_profit": 533.8433,
+      "gross_loss": 1063.8467,
+      "win_rate": 0.3913,
+      "loss_rate": 0.6087,
+      "profit_factor": 0.5018,
+      "max_drawdown": 0.0718,
+      "sharpe": -4.2336,
+      "sortino": -0.2876,
+      "calmar": -2.1951,
+      "avg_win": 11.8632,
+      "avg_loss": 15.1978,
+      "largest_win": 54.3239,
+      "largest_loss": -102.5728,
+      "expectancy": -4.6087,
+      "recovery_factor": -0.7378,
+      "avg_duration_h": 1.2065,
+      "consecutive_wins": 6,
+      "consecutive_losses": 10,
+      "monthly_return": 0.0,
+      "annualized_return": -0.1577,
+      "return_on_capital": -0.053,
+      "num_trades": 115
+    },
+    "oos": {
+      "net_profit": -549.0524,
+      "gross_profit": 123.4066,
+      "gross_loss": 672.459,
+      "win_rate": 0.2973,
+      "loss_rate": 0.7027,
+      "profit_factor": 0.1835,
+      "max_drawdown": 0.0615,
+      "sharpe": -7.1905,
+      "sortino": -0.5081,
+      "calmar": -6.4135,
+      "avg_win": 11.2188,
+      "avg_loss": 25.8638,
+      "largest_win": 45.3743,
+      "largest_loss": -103.6408,
+      "expectancy": -14.8393,
+      "recovery_factor": -0.8929,
+      "avg_duration_h": 1.9572,
+      "consecutive_wins": 2,
+      "consecutive_losses": 12,
+      "monthly_return": 0.0,
+      "annualized_return": -0.3944,
+      "return_on_capital": -0.0549,
+      "num_trades": 37
+    },
+    "mc": {
+      "mc_median_net": -523.1761,
+      "mc_p5_net": -957.5477,
+      "mc_p95_net": -138.8927,
+      "mc_prob_profit": 0.012,
+      "mc_median_max_dd": -0.0571,
+      "mc_worst_max_dd": -0.1563,
+      "mc_median_consec_loss": 8.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -509.033567429551,
+        "trades": 83
+      },
+      "bear": {
+        "net": -592.477121846421,
+        "trades": 56
+      },
+      "sideways": {
+        "net": -572.3716886750678,
+        "trades": 61
+      }
+    },
+    "trades_full": 115
+  },
+  {
+    "name": "vwap_reclaim",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": false,
+    "params": {
+      "atr_mult": 3.0
+    },
+    "score": -1.6,
+    "full": {
+      "net_profit": -608.8294,
+      "gross_profit": 402.0256,
+      "gross_loss": 1010.8551,
+      "win_rate": 0.2609,
+      "loss_rate": 0.7391,
+      "profit_factor": 0.3977,
+      "max_drawdown": 0.0873,
+      "sharpe": -2.4674,
+      "sortino": -0.1501,
+      "calmar": -0.9925,
+      "avg_win": 67.0043,
+      "avg_loss": 59.4621,
+      "largest_win": 130.7251,
+      "largest_loss": -122.9385,
+      "expectancy": -26.4708,
+      "recovery_factor": -0.6978,
+      "avg_duration_h": 7.0978,
+      "consecutive_wins": 1,
+      "consecutive_losses": 5,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0866,
+      "return_on_capital": -0.0609,
+      "num_trades": 23
+    },
+    "oos": {
+      "net_profit": -566.3179,
+      "gross_profit": 1158.8887,
+      "gross_loss": 1725.2066,
+      "win_rate": 0.3784,
+      "loss_rate": 0.6216,
+      "profit_factor": 0.6717,
+      "max_drawdown": 0.1112,
+      "sharpe": -2.7794,
+      "sortino": -0.4171,
+      "calmar": -2.2654,
+      "avg_win": 82.7778,
+      "avg_loss": 75.009,
+      "largest_win": 141.3669,
+      "largest_loss": -112.1412,
+      "expectancy": -15.3059,
+      "recovery_factor": -0.5094,
+      "avg_duration_h": 6.3243,
+      "consecutive_wins": 4,
+      "consecutive_losses": 7,
+      "monthly_return": -0.0201,
+      "annualized_return": -0.2518,
+      "return_on_capital": -0.0566,
+      "num_trades": 37
+    },
+    "mc": {
+      "mc_median_net": -613.6363,
+      "mc_p5_net": -1125.5028,
+      "mc_p95_net": -95.6311,
+      "mc_prob_profit": 0.03,
+      "mc_median_max_dd": -0.0667,
+      "mc_worst_max_dd": -0.1481,
+      "mc_median_consec_loss": 7.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -549.3542410290216,
+        "trades": 17
+      },
+      "bear": {
+        "net": -523.1007134473219,
+        "trades": 10
+      },
+      "sideways": {
+        "net": 1491.6586834167065,
+        "trades": 97
+      }
+    },
+    "trades_full": 23
+  },
+  {
+    "name": "macd",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": false,
+    "params": {
+      "atr_mult": 4.0
+    },
+    "score": -2.14,
+    "full": {
+      "net_profit": -538.0973,
+      "gross_profit": 384.3857,
+      "gross_loss": 922.483,
+      "win_rate": 0.2727,
+      "loss_rate": 0.7273,
+      "profit_factor": 0.4167,
+      "max_drawdown": 0.0824,
+      "sharpe": -2.1642,
+      "sortino": -0.1405,
+      "calmar": -0.891,
+      "avg_win": 64.0643,
+      "avg_loss": 57.6552,
+      "largest_win": 121.6799,
+      "largest_loss": -109.3784,
+      "expectancy": -24.459,
+      "recovery_factor": -0.6534,
+      "avg_duration_h": 11.5341,
+      "consecutive_wins": 2,
+      "consecutive_losses": 8,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0734,
+      "return_on_capital": -0.0538,
+      "num_trades": 22
+    },
+    "oos": {
+      "net_profit": -593.8872,
+      "gross_profit": 793.7392,
+      "gross_loss": 1387.6265,
+      "win_rate": 0.2727,
+      "loss_rate": 0.7273,
+      "profit_factor": 0.572,
+      "max_drawdown": 0.0983,
+      "sharpe": -2.8426,
+      "sortino": -0.5389,
+      "calmar": -2.4854,
+      "avg_win": 88.1932,
+      "avg_loss": 57.8178,
+      "largest_win": 301.8906,
+      "largest_loss": -103.8625,
+      "expectancy": -17.9966,
+      "recovery_factor": -0.6042,
+      "avg_duration_h": 14.4167,
+      "consecutive_wins": 4,
+      "consecutive_losses": 6,
+      "monthly_return": -0.0161,
+      "annualized_return": -0.2443,
+      "return_on_capital": -0.0594,
+      "num_trades": 33
+    },
+    "mc": {
+      "mc_median_net": -543.1732,
+      "mc_p5_net": -1071.2601,
+      "mc_p95_net": -66.5185,
+      "mc_prob_profit": 0.036,
+      "mc_median_max_dd": -0.0607,
+      "mc_worst_max_dd": -0.1401,
+      "mc_median_consec_loss": 7.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -433.3343932740513,
+        "trades": 189
+      },
+      "bear": {
+        "net": -595.5444773141414,
+        "trades": 7
+      },
+      "sideways": {
+        "net": 1539.7300163163127,
+        "trades": 68
+      }
+    },
+    "trades_full": 22
+  },
+  {
+    "name": "supertrend",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": false,
+    "params": {
+      "multiplier": 2.5,
+      "period": 7
+    },
+    "score": -6.11,
+    "full": {
+      "net_profit": -560.1575,
+      "gross_profit": 316.3764,
+      "gross_loss": 876.5339,
+      "win_rate": 0.3,
+      "loss_rate": 0.7,
+      "profit_factor": 0.3609,
+      "max_drawdown": 0.0829,
+      "sharpe": -2.6008,
+      "sortino": -0.1452,
+      "calmar": -0.9913,
+      "avg_win": 52.7294,
+      "avg_loss": 62.6096,
+      "largest_win": 91.5622,
+      "largest_loss": -124.3102,
+      "expectancy": -28.0079,
+      "recovery_factor": -0.6755,
+      "avg_duration_h": 7.275,
+      "consecutive_wins": 2,
+      "consecutive_losses": 6,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0822,
+      "return_on_capital": -0.056,
+      "num_trades": 20
+    },
+    "oos": {
+      "net_profit": -526.7845,
+      "gross_profit": 413.8498,
+      "gross_loss": 940.6343,
+      "win_rate": 0.3077,
+      "loss_rate": 0.6923,
+      "profit_factor": 0.44,
+      "max_drawdown": 0.0716,
+      "sharpe": -4.366,
+      "sortino": -0.5198,
+      "calmar": -3.1625,
+      "avg_win": 51.7312,
+      "avg_loss": 52.2575,
+      "largest_win": 69.589,
+      "largest_loss": -104.5822,
+      "expectancy": -20.2609,
+      "recovery_factor": -0.7358,
+      "avg_duration_h": 6.7308,
+      "consecutive_wins": 4,
+      "consecutive_losses": 12,
+      "monthly_return": -0.0148,
+      "annualized_return": -0.2264,
+      "return_on_capital": -0.0527,
+      "num_trades": 26
+    },
+    "mc": {
+      "mc_median_net": -540.0301,
+      "mc_p5_net": -1013.1041,
+      "mc_p95_net": -70.9939,
+      "mc_prob_profit": 0.028,
+      "mc_median_max_dd": -0.0596,
+      "mc_worst_max_dd": -0.1396,
+      "mc_median_consec_loss": 6.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -542.4680328908693,
+        "trades": 22
+      },
+      "bear": {
+        "net": -507.7978357831858,
+        "trades": 6
+      },
+      "sideways": {
+        "net": 800.9247553266213,
+        "trades": 79
+      }
+    },
+    "trades_full": 20
+  },
+  {
+    "name": "breakout",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": false,
+    "params": {
+      "lookback": 20
+    },
+    "score": -7.23,
+    "full": {
+      "net_profit": -512.9003,
+      "gross_profit": 316.3738,
+      "gross_loss": 829.2742,
+      "win_rate": 0.3684,
+      "loss_rate": 0.6316,
+      "profit_factor": 0.3815,
+      "max_drawdown": 0.077,
+      "sharpe": -2.3215,
+      "sortino": -0.128,
+      "calmar": -0.9553,
+      "avg_win": 45.1963,
+      "avg_loss": 69.1062,
+      "largest_win": 108.0506,
+      "largest_loss": -132.5136,
+      "expectancy": -26.9948,
+      "recovery_factor": -0.6658,
+      "avg_duration_h": 7.8158,
+      "consecutive_wins": 2,
+      "consecutive_losses": 5,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0736,
+      "return_on_capital": -0.0513,
+      "num_trades": 19
+    },
+    "oos": {
+      "net_profit": -528.2936,
+      "gross_profit": 211.4585,
+      "gross_loss": 739.7521,
+      "win_rate": 0.2632,
+      "loss_rate": 0.7368,
+      "profit_factor": 0.2859,
+      "max_drawdown": 0.0637,
+      "sharpe": -4.8172,
+      "sortino": -0.4655,
+      "calmar": -3.3847,
+      "avg_win": 42.2917,
+      "avg_loss": 52.8394,
+      "largest_win": 71.0489,
+      "largest_loss": -108.9311,
+      "expectancy": -27.8049,
+      "recovery_factor": -0.8293,
+      "avg_duration_h": 4.3816,
+      "consecutive_wins": 2,
+      "consecutive_losses": 7,
+      "monthly_return": -0.0108,
+      "annualized_return": -0.2156,
+      "return_on_capital": -0.0528,
+      "num_trades": 19
+    },
+    "mc": {
+      "mc_median_net": -522.9022,
+      "mc_p5_net": -972.2224,
+      "mc_p95_net": -26.3015,
+      "mc_prob_profit": 0.042,
+      "mc_median_max_dd": -0.0558,
+      "mc_worst_max_dd": -0.122,
+      "mc_median_consec_loss": 5.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -517.7363344646378,
+        "trades": 18
+      },
+      "bear": {
+        "net": -550.1864608875815,
+        "trades": 8
+      },
+      "sideways": {
+        "net": 1070.8798155353843,
+        "trades": 58
+      }
+    },
+    "trades_full": 19
+  },
+  {
+    "name": "ema_cross",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": false,
+    "params": {
+      "fast": 10,
+      "slow": 60
+    },
+    "score": -7.98,
+    "full": {
+      "net_profit": -525.4178,
+      "gross_profit": 256.9218,
+      "gross_loss": 782.3395,
+      "win_rate": 0.3333,
+      "loss_rate": 0.6667,
+      "profit_factor": 0.3284,
+      "max_drawdown": 0.0809,
+      "sharpe": -2.3084,
+      "sortino": -0.1116,
+      "calmar": -0.9122,
+      "avg_win": 51.3844,
+      "avg_loss": 78.234,
+      "largest_win": 106.8678,
+      "largest_loss": -128.4631,
+      "expectancy": -35.0279,
+      "recovery_factor": -0.6496,
+      "avg_duration_h": 7.0333,
+      "consecutive_wins": 2,
+      "consecutive_losses": 5,
+      "monthly_return": 0.0,
+      "annualized_return": -0.0738,
+      "return_on_capital": -0.0525,
+      "num_trades": 15
+    },
+    "oos": {
+      "net_profit": -537.2861,
+      "gross_profit": 285.0067,
+      "gross_loss": 822.2928,
+      "win_rate": 0.2778,
+      "loss_rate": 0.7222,
+      "profit_factor": 0.3466,
+      "max_drawdown": 0.0632,
+      "sharpe": -4.1142,
+      "sortino": -0.4085,
+      "calmar": -3.3869,
+      "avg_win": 57.0013,
+      "avg_loss": 63.2533,
+      "largest_win": 90.053,
+      "largest_loss": -105.3295,
+      "expectancy": -29.8492,
+      "recovery_factor": -0.8497,
+      "avg_duration_h": 7.1806,
+      "consecutive_wins": 2,
+      "consecutive_losses": 4,
+      "monthly_return": -0.0127,
+      "annualized_return": -0.2142,
+      "return_on_capital": -0.0537,
+      "num_trades": 18
+    },
+    "mc": {
+      "mc_median_net": -519.2134,
+      "mc_p5_net": -962.2811,
+      "mc_p95_net": -101.1578,
+      "mc_prob_profit": 0.034,
+      "mc_median_max_dd": -0.054,
+      "mc_worst_max_dd": -0.1279,
+      "mc_median_consec_loss": 5.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -557.1431825523321,
+        "trades": 35
+      },
+      "bear": {
+        "net": -548.2269339504047,
+        "trades": 7
+      },
+      "sideways": {
+        "net": -501.03346344908243,
+        "trades": 10
+      }
+    },
+    "trades_full": 15
+  },
+  {
+    "name": "atr_trend",
+    "tf": "15m",
+    "kind": "trend",
+    "deployable": false,
+    "params": {
+      "multiplier": 3.5
+    },
+    "score": -9.59,
+    "full": {
+      "net_profit": -515.0353,
+      "gross_profit": 126.1772,
+      "gross_loss": 641.2125,
+      "win_rate": 0.2,
+      "loss_rate": 0.8,
+      "profit_factor": 0.1968,
+      "max_drawdown": 0.0645,
+      "sharpe": -2.7382,
+      "sortino": -0.1224,
+      "calmar": -0.9941,
+      "avg_win": 42.0591,
+      "avg_loss": 53.4344,
+      "largest_win": 74.4156,
+      "largest_loss": -91.8053,
+      "expectancy": -34.3357,
+      "recovery_factor": -0.798,
+      "avg_duration_h": 3.5333,
+      "consecutive_wins": 1,
+      "consecutive_losses": 9,
+      "monthly_return": -0.006,
+      "annualized_return": -0.0642,
+      "return_on_capital": -0.0515,
+      "num_trades": 15
+    },
+    "oos": {
+      "net_profit": -270.044,
+      "gross_profit": 54.1965,
+      "gross_loss": 324.2405,
+      "win_rate": 0.25,
+      "loss_rate": 0.75,
+      "profit_factor": 0.1671,
+      "max_drawdown": 0.0314,
+      "sharpe": -3.7735,
+      "sortino": -0.2083,
+      "calmar": -3.4893,
+      "avg_win": 27.0983,
+      "avg_loss": 54.0401,
+      "largest_win": 31.9248,
+      "largest_loss": -98.7018,
+      "expectancy": -33.7555,
+      "recovery_factor": -0.8594,
+      "avg_duration_h": 3.9375,
+      "consecutive_wins": 1,
+      "consecutive_losses": 4,
+      "monthly_return": -0.0078,
+      "annualized_return": -0.1096,
+      "return_on_capital": -0.027,
+      "num_trades": 8
+    },
+    "mc": {
+      "mc_median_net": -507.0435,
+      "mc_p5_net": -773.3789,
+      "mc_p95_net": -191.6938,
+      "mc_prob_profit": 0.008,
+      "mc_median_max_dd": -0.0498,
+      "mc_worst_max_dd": -0.096,
+      "mc_median_consec_loss": 7.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -562.5879779460905,
+        "trades": 33
+      },
+      "bear": {
+        "net": -566.2934111457646,
+        "trades": 11
+      },
+      "sideways": {
+        "net": -505.3459693208346,
+        "trades": 11
+      }
+    },
+    "trades_full": 15
+  },
+  {
+    "name": "fair_value_gap",
+    "tf": "5m",
+    "kind": "reversion",
+    "deployable": true,
+    "params": {
+      "atr_mult": 2.0
+    },
+    "score": -11.49,
+    "full": {
+      "net_profit": -544.6301,
+      "gross_profit": 0,
+      "gross_loss": 544.6301,
+      "win_rate": 0.0,
+      "loss_rate": 1.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0694,
+      "sharpe": -3.771,
+      "sortino": -0.3025,
+      "calmar": -2.3145,
+      "avg_win": 0,
+      "avg_loss": 136.1575,
+      "largest_win": 0,
+      "largest_loss": -209.4675,
+      "expectancy": -136.1575,
+      "recovery_factor": -0.7846,
+      "avg_duration_h": 529.8958,
+      "consecutive_wins": 0,
+      "consecutive_losses": 4,
+      "monthly_return": -0.0087,
+      "annualized_return": -0.1607,
+      "return_on_capital": -0.0545,
+      "num_trades": 4
+    },
+    "oos": {
+      "net_profit": -515.207,
+      "gross_profit": 0,
+      "gross_loss": 515.207,
+      "win_rate": 0.0,
+      "loss_rate": 1.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0535,
+      "sharpe": -6.6138,
+      "sortino": -0.3815,
+      "calmar": -6.7278,
+      "avg_win": 0,
+      "avg_loss": 103.0414,
+      "largest_win": 0,
+      "largest_loss": -106.3997,
+      "expectancy": -103.0414,
+      "recovery_factor": -0.963,
+      "avg_duration_h": 43.9833,
+      "consecutive_wins": 0,
+      "consecutive_losses": 5,
+      "monthly_return": -0.0056,
+      "annualized_return": -0.3599,
+      "return_on_capital": -0.0515,
+      "num_trades": 5
+    },
+    "mc": {
+      "mc_median_net": -544.6301,
+      "mc_p5_net": -726.6835,
+      "mc_p95_net": -405.7061,
+      "mc_prob_profit": 0.0,
+      "mc_median_max_dd": -0.0416,
+      "mc_worst_max_dd": -0.0642,
+      "mc_median_consec_loss": 4.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": 15.883471666197465,
+        "trades": 4
+      },
+      "bear": {
+        "net": -567.3660507951138,
+        "trades": 5
+      },
+      "sideways": {
+        "net": -586.710378333936,
+        "trades": 5
+      }
+    },
+    "trades_full": 4
+  },
+  {
+    "name": "rsi_reversal",
+    "tf": "15m",
+    "kind": "reversion",
+    "deployable": false,
+    "params": {
+      "period": 10
+    },
+    "score": -15.1,
+    "full": {
+      "net_profit": -578.3515,
+      "gross_profit": 0,
+      "gross_loss": 578.3515,
+      "win_rate": 0.0,
+      "loss_rate": 1.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0663,
+      "sharpe": -2.6845,
+      "sortino": -0.1971,
+      "calmar": -1.1028,
+      "avg_win": 0,
+      "avg_loss": 115.6703,
+      "largest_win": 0,
+      "largest_loss": -127.3007,
+      "expectancy": -115.6703,
+      "recovery_factor": -0.8718,
+      "avg_duration_h": 247.15,
+      "consecutive_wins": 0,
+      "consecutive_losses": 5,
+      "monthly_return": -0.0047,
+      "annualized_return": -0.0732,
+      "return_on_capital": -0.0578,
+      "num_trades": 5
+    },
+    "oos": {
+      "net_profit": -548.9009,
+      "gross_profit": 0,
+      "gross_loss": 548.9009,
+      "win_rate": 0.0,
+      "loss_rate": 1.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0604,
+      "sharpe": -4.6787,
+      "sortino": -0.5085,
+      "calmar": -3.3998,
+      "avg_win": 0,
+      "avg_loss": 109.7802,
+      "largest_win": 0,
+      "largest_loss": -140.8692,
+      "expectancy": -109.7802,
+      "recovery_factor": -0.9083,
+      "avg_duration_h": 155.4,
+      "consecutive_wins": 0,
+      "consecutive_losses": 5,
+      "monthly_return": -0.0152,
+      "annualized_return": -0.2055,
+      "return_on_capital": -0.0549,
+      "num_trades": 5
+    },
+    "mc": {
+      "mc_median_net": -578.3515,
+      "mc_p5_net": -616.4543,
+      "mc_p95_net": -535.7427,
+      "mc_prob_profit": 0.0,
+      "mc_median_max_dd": -0.047,
+      "mc_worst_max_dd": -0.0515,
+      "mc_median_consec_loss": 5.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -562.858711669934,
+        "trades": 5
+      },
+      "bear": {
+        "net": -522.9301840914031,
+        "trades": 5
+      },
+      "sideways": {
+        "net": -549.3014628461553,
+        "trades": 5
+      }
+    },
+    "trades_full": 5
+  },
+  {
+    "name": "bollinger",
+    "tf": "15m",
+    "kind": "reversion",
+    "deployable": false,
+    "params": {
+      "std_mult": 2.2
+    },
+    "score": -15.14,
+    "full": {
+      "net_profit": -580.2218,
+      "gross_profit": 0,
+      "gross_loss": 580.2218,
+      "win_rate": 0.0,
+      "loss_rate": 1.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0668,
+      "sharpe": -2.6978,
+      "sortino": -0.2016,
+      "calmar": -1.1028,
+      "avg_win": 0,
+      "avg_loss": 116.0444,
+      "largest_win": 0,
+      "largest_loss": -127.288,
+      "expectancy": -116.0444,
+      "recovery_factor": -0.868,
+      "avg_duration_h": 252.1,
+      "consecutive_wins": 0,
+      "consecutive_losses": 5,
+      "monthly_return": -0.0047,
+      "annualized_return": -0.0737,
+      "return_on_capital": -0.058,
+      "num_trades": 5
+    },
+    "oos": {
+      "net_profit": -545.6156,
+      "gross_profit": 0,
+      "gross_loss": 545.6156,
+      "win_rate": 0.0,
+      "loss_rate": 1.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0597,
+      "sharpe": -4.6841,
+      "sortino": -0.4954,
+      "calmar": -3.403,
+      "avg_win": 0,
+      "avg_loss": 109.1231,
+      "largest_win": 0,
+      "largest_loss": -127.2506,
+      "expectancy": -109.1231,
+      "recovery_factor": -0.9132,
+      "avg_duration_h": 142.75,
+      "consecutive_wins": 0,
+      "consecutive_losses": 5,
+      "monthly_return": -0.0126,
+      "annualized_return": -0.2033,
+      "return_on_capital": -0.0546,
+      "num_trades": 5
+    },
+    "mc": {
+      "mc_median_net": -580.2218,
+      "mc_p5_net": -620.4402,
+      "mc_p95_net": -537.455,
+      "mc_prob_profit": 0.0,
+      "mc_median_max_dd": -0.0472,
+      "mc_worst_max_dd": -0.0515,
+      "mc_median_consec_loss": 5.0,
+      "mc_n": 500.0
+    },
+    "regimes": {
+      "bull": {
+        "net": -559.9995641410002,
+        "trades": 5
+      },
+      "bear": {
+        "net": -524.875458761497,
+        "trades": 5
+      },
+      "sideways": {
+        "net": -526.8859370943109,
+        "trades": 5
+      }
+    },
+    "trades_full": 5
+  }
+]

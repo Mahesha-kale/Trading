@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     coindcx_api_secret: str = ""
     trading_mode: str = "paper"  # test | paper | live
     symbol: str = "B-BTC_USDT"
+    default_strategy: str = "wyckoff"  # strategy the live/paper engine boots with
     # CoinDCX futures: same B-BTC_USDT contract can be margined in USDT or INR.
     # This account uses INR margin; PnL settles in INR. Set MARGIN_CURRENCY in .env to override.
     margin_currency: str = "INR"
