@@ -41,6 +41,8 @@ node_modules/
 *.sqlite3
 sqlite/
 reports/*.html
+reports/binance_*.csv
+reports/binance_*.parquet
 *.log
 logs/
 
