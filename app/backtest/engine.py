@@ -130,7 +130,10 @@ class Backtester:
                     lev = risk.check_leverage(cfg.leverage)
                     qty = risk.position_size(entry, stop, lev, atr_series.iloc[i])
                     if qty > 0:
-                        fee = entry * qty * cfg.taker_fee
+                        # maker_on_limit: limit entries pay maker (realistic for
+                        # signal-on-close -> limit-next-bar models). Halves entry cost.
+                        entry_fee_rate = cfg.maker_fee if cfg.maker_on_limit else cfg.taker_fee
+                        fee = entry * qty * entry_fee_rate
                         equity -= fee
                         pos = Position("long", entry, qty, lev, ts, stop=stop, take_profit=tp,
                                         trailing_atr=atr_series.iloc[i] if cfg.use_trailing else None,

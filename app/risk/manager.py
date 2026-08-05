@@ -127,7 +127,8 @@ def liquidation_price(side: str, entry: float, leverage: int,
     """Isolated-margin approx liquidation price. ponytail: simplified; exchange
     uses tiered maintenance margin + fees. Use for warning only, not final truth."""
     lev = max(leverage, 1)
-    if side == "buy":
+    # accept both engine position sides ("long"/"short") and order sides ("buy"/"sell")
+    if side in ("buy", "long"):
         return entry * (1 - (1 / lev) + maint_margin_rate)
     return entry * (1 + (1 / lev) - maint_margin_rate)
 
