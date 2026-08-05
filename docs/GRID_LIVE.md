@@ -92,6 +92,12 @@ Caveat: runs "only when user is logged on" by default. Lock the screen (don't
 log off) overnight. For true logoff-proof runs, register with `/rl highest`
 and a wake-timer (needs your account password).
 
+**Process-count gotcha:** a single grid run shows as **2 OS processes** —
+`.venv\Scripts\python.exe` (the venv launcher stub) re-execs the base interpreter
+(`pythoncore-3.14\python.exe`). So `live=2 monitor=2` means one run + one
+monitor, not a double-launch. The double-launch guard checks for *any*
+`grid_live.py` process and still works (it matches both).
+
 ## Next-day checklist
 
 1. `reports/grid_live_replay.json` — sanity drift (must be ~0) + divergence gap.
