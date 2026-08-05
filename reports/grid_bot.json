@@ -1,0 +1,27 @@
+{
+  "symbol": "ETHUSDT",
+  "best_grid": {
+    "g": 0.02,
+    "K": 10
+  },
+  "full": {
+    "sharpe": 1.03,
+    "max_dd": -0.301,
+    "cagr": 0.265,
+    "pf": 1.02,
+    "n": 90528,
+    "end_eq": 18364.1
+  },
+  "oos": {
+    "sharpe": 0.83,
+    "max_dd": -0.454,
+    "cagr": 0.314,
+    "pf": 1.01,
+    "n": 27159,
+    "end_eq": 12356.1
+  },
+  "buyhold_full": 2.0952,
+  "buyhold_oos": 0.3967,
+  "fee": 0.001,
+  "verdict": "GRID EDGE OOS"
+}
