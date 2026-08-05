@@ -1,0 +1,52 @@
+{
+  "symbol": "ETHUSDT",
+  "leverage": 1.0,
+  "n_events": 2828,
+  "mean_abs_rate_pct": 0.00906831117397454,
+  "directional": {
+    "full": {
+      "sharpe": -0.58,
+      "max_dd": -0.755,
+      "cagr": -0.407,
+      "pf": 0.95,
+      "n": 2828,
+      "end_eq": 0.259
+    },
+    "oos": {
+      "sharpe": -1.27,
+      "max_dd": -0.677,
+      "cagr": -0.694,
+      "pf": 0.9,
+      "n": 849,
+      "end_eq": 0.399
+    }
+  },
+  "delta_neutral": {
+    "full": {
+      "sharpe": -5.47,
+      "max_dd": -0.235,
+      "cagr": -0.092,
+      "pf": 0.5,
+      "n": 2828,
+      "end_eq": 0.779
+    },
+    "oos": {
+      "sharpe": -9.79,
+      "max_dd": -0.18,
+      "cagr": -0.181,
+      "pf": 0.29,
+      "n": 849,
+      "end_eq": 0.857
+    },
+    "oos_maker": {
+      "sharpe": -5.33,
+      "max_dd": -0.084,
+      "cagr": -0.055,
+      "pf": 0.59,
+      "n": 849,
+      "end_eq": 0.957
+    }
+  },
+  "buyhold_oos_ret": 0.4165,
+  "verdict": "no carry edge OOS (fees eat funding)"
+}
