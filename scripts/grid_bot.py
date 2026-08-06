@@ -57,8 +57,14 @@ class GridBot:
         self.flattened = False
         self.equity = capital
 
-    def step(self, price: float) -> tuple[float, list[dict]]:
-        """Process one price tick. Returns (mark-to-market equity, fills_this_step)."""
+    def step(self, price: float, allow_buy: bool = True) -> tuple[float, list[dict]]:
+        """Process one price tick. Returns (mark-to-market equity, fills_this_step).
+
+        allow_buy (default True, so live callers are unchanged) gates NEW ladder
+        buys only — sells, marking, and the stop all still run. Used by the
+        regime-gated backtest to test whether filtering downtrend entries
+        recovers edge; live never passes it.
+        """
         if self.anchor is None:
             self.anchor = price
             self.equity = self.capital
@@ -88,8 +94,8 @@ class GridBot:
         if self.flattened and eq >= self.peak:
             self.flattened = False
             self.anchor = c
-        # ladder buy: dropped g% below anchor, under cap, not flattened
-        if (not self.flattened) and c <= self.anchor * (1 - self.g) and len(self.open_buys) < self.K:
+        # ladder buy: dropped g% below anchor, under cap, not flattened, regime open
+        if allow_buy and (not self.flattened) and c <= self.anchor * (1 - self.g) and len(self.open_buys) < self.K:
             self.open_buys.append(c)
             self.cash -= self.unit
             self.anchor = c
@@ -107,6 +113,23 @@ def grid_backtest(px: pd.Series, g: float, K: int, fee: float = FEE,
     eq_vals = []
     for i in range(len(px)):
         eq, _ = bot.step(float(px.iloc[i]))
+        eq_vals.append(eq)
+    return pd.Series(eq_vals, index=px.index)
+
+
+def grid_backtest_gated(px: pd.Series, g: float, K: int, gate: pd.Series,
+                        fee: float = FEE, capital: float = 10000.0,
+                        stop: float | None = None) -> pd.Series:
+    """Regime-gated backtest: gate (bool, aligned to px) blocks NEW buys only —
+    sells/marking/stop still run, so it models "stop adding risk in a downtrend,
+    let existing inventory work off". The regime filter used in research is
+    close > SMA(200) (only buy dips when the macro trend is up/flat); it cuts
+    the 2025-2026 downtrend drawdown ~4x but does NOT restore edge (grid is
+    long-only; a downtrend gate can stop bleeding, not profit)."""
+    bot = GridBot(g, K, fee, capital, stop)
+    eq_vals = []
+    for i in range(len(px)):
+        eq, _ = bot.step(float(px.iloc[i]), allow_buy=bool(gate.iloc[i]))
         eq_vals.append(eq)
     return pd.Series(eq_vals, index=px.index)
 
@@ -163,6 +186,15 @@ def main(symbol="BTCUSDT"):
                else "no grid edge OOS" if oos["sharpe"] < 0
                else "marginal grid OOS")
     print(f"\nverdict: {verdict} (oos sh {oos['sharpe']}, end {oos['end_eq']})")
+    # regime-gated robustness probe (close > SMA200 blocks downtrend entries).
+    # Reports whether a filter rescues the edge on the fresh OOS. To date it
+    # cuts DD ~4x but stays negative -> grid is not deployable even gated.
+    oos_px = px.loc[split:]
+    gate = oos_px > oos_px.rolling(200).mean()
+    gated_oos = metrics(grid_backtest_gated(oos_px, g, K, gate)) if gate.notna().any() else None
+    if gated_oos:
+        print(f"gated oos (close>SMA200, on {gate.mean()*100:.0f}%): sh {gated_oos['sharpe']} "
+              f"end {gated_oos['end_eq']} dd {gated_oos['max_dd']}")
     # deployable only when the edge holds on the current OOS slice. Deployed
     # grid = best OOS Sharpe (one-time post-hoc pick, audited via the saved
     # surface). None when refuted -> the live runner warns and runs paper for
@@ -171,7 +203,7 @@ def main(symbol="BTCUSDT"):
     d = max(surface, key=lambda r: r["oos_sh"]) if deployable else None
     DEPLOYED = {"g": d["g"], "K": d["K"]} if d else None
     json.dump({"symbol": symbol, "best_grid": {"g": g, "K": K}, "deployable": deployable,
-                "deployed": DEPLOYED, "surface": surface, "full": full,
+                "deployed": DEPLOYED, "surface": surface, "gated_oos": gated_oos, "full": full,
                 "oos": oos, "buyhold_full": round(bh_full, 4), "buyhold_oos": round(bh_oos, 4),
                 "fee": FEE, "verdict": verdict},
               open("reports/grid_bot.json", "w"), indent=2, default=str)
