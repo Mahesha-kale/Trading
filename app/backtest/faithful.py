@@ -55,7 +55,7 @@ def run_faithful(strategy: BaseStrategy, df: pd.DataFrame,
 
         # mark-to-market equity for the risk gate (live gets mark from WS)
         mark = eq + (c - pos["entry"]) * pos["qty"] if pos is not None else eq
-        risk.update_equity(mark)
+        risk.update_equity(mark, ts)
 
         # 8h funding on open position
         if pos is not None and ts >= next_funding:

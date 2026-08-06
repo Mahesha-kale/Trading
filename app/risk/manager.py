@@ -46,11 +46,16 @@ class RiskManager:
         today = datetime.now(timezone.utc).date().isoformat()
         self.state = RiskState(equity=equity, peak_equity=equity, day_start_equity=equity, day=today)
 
-    def update_equity(self, equity: float) -> None:
+    def update_equity(self, equity: float, ts: "datetime | pd.Timestamp | None" = None) -> None:
         st = self.state
         st.equity = equity
         st.peak_equity = max(st.peak_equity, equity)
-        today = datetime.now(timezone.utc).date().isoformat()
+        # ponytail: ts is the bar/candle timestamp when backtesting (so the daily
+        # loss limit resets per backtest-day, not once-then-forever); live omits
+        # it and falls back to wall-clock now. Without ts a multi-year backtest
+        # treats cumulative-all-time realized loss as one "day", trips the 5%
+        # limit once, then blocks every entry for the rest of the run.
+        today = (ts if ts is not None else datetime.now(timezone.utc)).date().isoformat()
         if today != st.day:
             st.day = today
             st.day_start_equity = equity
