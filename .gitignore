@@ -45,6 +45,13 @@ reports/binance_*.csv
 reports/binance_*.parquet
 *.log
 logs/
+# spot-grid live run artifacts (churn every run; grid_bot.json stays tracked as
+# the tuning/deployable source of truth that grid_live.py reads)
+reports/grid_live.jsonl
+reports/grid_live_series.jsonl
+reports/grid_live_replay.json
+reports/grid_live_summary.json
+reports/*.err
 
 # --- Knowledge graph (regenerated locally) ---
 graphify-out/

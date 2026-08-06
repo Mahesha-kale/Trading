@@ -106,3 +106,65 @@ monitor, not a double-launch. The double-launch guard checks for *any*
 4. If divergence gap is small and sane → live edge confirmed at this resolution.
    If large/negative → the close-only backtest over-states; tighten the fee/slippage model or re-tune `g`/`K`.
 5. For a sharper divergence signal, run longer (overnight = ~50 bars).
+## Tuning, resume, and the deployed grid
+
+**Deployed grid lives in `reports/grid_bot.json`** (`deployed` field), set by
+`scripts/grid_bot.py`. `grid_live.py` reads it on start; CLI `g`/`K` args still
+override. The Windows launcher (`grid_schedule.bat`) and the container both
+omit `g`/`K` so they auto-follow tuning — re-tune in one place.
+
+Why not the `best_grid` (train-argmax)? Train Sharpe over-fits to wide spacing
+(trends inflate it); the live default used to be `g=0.02 K=20` (best train,
+worst OOS in its row) and **flatlined for 12h** because BTC rarely moves 2%
+in a day. Deployed is `g=0.008 K=10`: OOS Sharpe ~1.43, smallest train→OOS
+drop among high-OOS grids, and 0.8% spacing fires fills in sub-day windows.
+The full train-vs-OOS surface is saved in `grid_bot.json` for audit.
+
+**Resume after a crash/reboot.** Log and series are opened in **append** mode
+with a per-tick **flush** — a machine drop mid-run loses no data. On start,
+`grid_live.py` replays the existing `grid_live_series.jsonl` through a fresh
+`GridBot` to rebuild anchor / open buys / cash exactly (the series is the
+single source of truth — no checkpoint file to drift from). If the grid
+config changed since the series was recorded, it truncates and starts fresh
+(can't safely mix grids in one series). `restart: unless-stopped` (container)
+or Task Scheduler "restart on failure" (Windows) relaunches after a drop,
+and the run resumes from the series.
+
+## Cloud / overnight container
+
+`docker compose up grid` runs the live runner as a restartable service
+(`docker-compose.yml` → `grid`). It shares the app image, mounts `./reports`
+so the series survives container recreation, and follows the deployed grid.
+On a cloud VM with Docker set to start on boot, a reboot → daemon restart →
+`grid` container restarts → `grid_live.py` resumes from the mounted series.
+Monitor (`scripts/grid_monitor.py`) is not run in the container by default —
+add it (a second command/sidecar) when you want feed-death alerts in the cloud.
+
+## Status: edge refuted under real CoinDCX costs (2026-08)
+
+The spot-grid line is **not deployable**. Pulling fresh Binance history through
+2026-07 and modeling the real CoinDCX costs (0.169% taker + 18% GST = 0.19942%
+per leg, plus **1% TDS on every sell notional**) refuted the edge:
+
+- Long-only: negative on the 2025-2026 OOS (Sharpe -1.02, end 6621, DD -40%).
+  The 2023-2025 "edge" was a regime artifact AND was overstated by the old
+  FEE=0.001 model that ignored TDS.
+- Long/short with the long side gated by close>SMA200: OOS Sharpe 0.67 looks
+  positive, but it BLOWS UP in-sample (train DD -124%) — ungated shorts explode
+  in the 2023-25 uptrend. The OOS "edge" is only because OOS was a downtrend.
+- Regime-switch (long above SMA200, short below): bounds the shorts but only
+  breaks even on OOS and loses in-sample.
+
+1% TDS per sell is the structural killer: a round trip costs ~1.4%, so a grid
+needs g >> 1.4% to profit, but wide grids fill rarely and still bleed in trends.
+`reports/grid_bot.json` has `deployable: false`, `deployed: null`. `grid_live.py`
+prints a WARNING when run against a refuted strategy (paper for divergence
+validation only).
+
+The scheduled Task Scheduler jobs (`grid_live_daily`, `grid_live_now`,
+`grid_run_now`) have been **disabled** — no point running 12h paper loops of a
+losing strategy. Re-enable only if a new config proves a positive OOS edge.
+
+The double-launch guard in `scripts/grid_schedule.bat` is known to race (two
+concurrent grid_live processes were observed) — fix with a file lock before
+re-enabling unattended runs.

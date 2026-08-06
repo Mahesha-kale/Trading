@@ -11,7 +11,8 @@ if errorlevel 1 (
 
 echo %date% %time% launch: grid_live 12h + monitor >> reports\grid_schedule.log
 REM Detached: live run (12h), then monitor (runs until done, auto-replays).
-start "" cmd /c ".venv\Scripts\python.exe scripts\grid_live.py B-BTC_USDT 43200 0.02 20 > reports\grid_live_scheduled.log 2>&1"
+REM g/K omitted -> grid_live.py reads the deployed grid from reports/grid_bot.json.
+start "" cmd /c ".venv\Scripts\python.exe scripts\grid_live.py B-BTC_USDT 43200 > reports\grid_live_scheduled.log 2>&1"
 timeout /t 5 /nobreak >nul
 start "" cmd /c ".venv\Scripts\python.exe scripts\grid_monitor.py reports\grid_live_scheduled.log 5 > reports\grid_monitor_scheduled.log 2>&1"
 exit /b 0
