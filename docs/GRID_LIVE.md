@@ -139,3 +139,32 @@ On a cloud VM with Docker set to start on boot, a reboot → daemon restart →
 `grid` container restarts → `grid_live.py` resumes from the mounted series.
 Monitor (`scripts/grid_monitor.py`) is not run in the container by default —
 add it (a second command/sidecar) when you want feed-death alerts in the cloud.
+
+## Status: edge refuted under real CoinDCX costs (2026-08)
+
+The spot-grid line is **not deployable**. Pulling fresh Binance history through
+2026-07 and modeling the real CoinDCX costs (0.169% taker + 18% GST = 0.19942%
+per leg, plus **1% TDS on every sell notional**) refuted the edge:
+
+- Long-only: negative on the 2025-2026 OOS (Sharpe -1.02, end 6621, DD -40%).
+  The 2023-2025 "edge" was a regime artifact AND was overstated by the old
+  FEE=0.001 model that ignored TDS.
+- Long/short with the long side gated by close>SMA200: OOS Sharpe 0.67 looks
+  positive, but it BLOWS UP in-sample (train DD -124%) — ungated shorts explode
+  in the 2023-25 uptrend. The OOS "edge" is only because OOS was a downtrend.
+- Regime-switch (long above SMA200, short below): bounds the shorts but only
+  breaks even on OOS and loses in-sample.
+
+1% TDS per sell is the structural killer: a round trip costs ~1.4%, so a grid
+needs g >> 1.4% to profit, but wide grids fill rarely and still bleed in trends.
+`reports/grid_bot.json` has `deployable: false`, `deployed: null`. `grid_live.py`
+prints a WARNING when run against a refuted strategy (paper for divergence
+validation only).
+
+The scheduled Task Scheduler jobs (`grid_live_daily`, `grid_live_now`,
+`grid_run_now`) have been **disabled** — no point running 12h paper loops of a
+losing strategy. Re-enable only if a new config proves a positive OOS edge.
+
+The double-launch guard in `scripts/grid_schedule.bat` is known to race (two
+concurrent grid_live processes were observed) — fix with a file lock before
+re-enabling unattended runs.
