@@ -14,8 +14,15 @@ class SupertrendStrategy(BaseStrategy):
     def generate_signals(self, df: pd.DataFrame) -> pd.Series:
         _, direction = supertrend(df["high"], df["low"], df["close"],
                                   self.params["period"], self.params["multiplier"])
+        # long/short: emit the current supertrend direction as a persistent state
+        # signal (+1 uptrend, -1 downtrend). The engine opens long/short only when
+        # flat, and the trailing stop exits -- so a state signal re-arms the entry
+        # on the bar after a stop-out. (The prior use_short path set pos=-1 and
+        # never returned to 0, so it emitted once and never re-entered long.)
+        if self.params["use_short"]:
+            return direction.fillna(0).astype(int)
+        # long-only: pulse +1 at the flip into an uptrend; engine exits via trailing.
         sig = pd.Series(0, index=df.index, dtype=int)
-        # state-hold: once in trend, stay until flip
         pos = 0
         for i in range(len(df)):
             d = direction.iloc[i]
@@ -26,9 +33,6 @@ class SupertrendStrategy(BaseStrategy):
                 sig.iloc[i] = 1
                 pos = 1
             elif d == -1 and pos == 1:
-                if self.params["use_short"]:
-                    sig.iloc[i] = -1
-                else:
-                    sig.iloc[i] = 0
-                pos = 0 if not self.params["use_short"] else -1
+                sig.iloc[i] = 0
+                pos = 0
         return sig
