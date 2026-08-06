@@ -106,3 +106,36 @@ monitor, not a double-launch. The double-launch guard checks for *any*
 4. If divergence gap is small and sane → live edge confirmed at this resolution.
    If large/negative → the close-only backtest over-states; tighten the fee/slippage model or re-tune `g`/`K`.
 5. For a sharper divergence signal, run longer (overnight = ~50 bars).
+## Tuning, resume, and the deployed grid
+
+**Deployed grid lives in `reports/grid_bot.json`** (`deployed` field), set by
+`scripts/grid_bot.py`. `grid_live.py` reads it on start; CLI `g`/`K` args still
+override. The Windows launcher (`grid_schedule.bat`) and the container both
+omit `g`/`K` so they auto-follow tuning — re-tune in one place.
+
+Why not the `best_grid` (train-argmax)? Train Sharpe over-fits to wide spacing
+(trends inflate it); the live default used to be `g=0.02 K=20` (best train,
+worst OOS in its row) and **flatlined for 12h** because BTC rarely moves 2%
+in a day. Deployed is `g=0.008 K=10`: OOS Sharpe ~1.43, smallest train→OOS
+drop among high-OOS grids, and 0.8% spacing fires fills in sub-day windows.
+The full train-vs-OOS surface is saved in `grid_bot.json` for audit.
+
+**Resume after a crash/reboot.** Log and series are opened in **append** mode
+with a per-tick **flush** — a machine drop mid-run loses no data. On start,
+`grid_live.py` replays the existing `grid_live_series.jsonl` through a fresh
+`GridBot` to rebuild anchor / open buys / cash exactly (the series is the
+single source of truth — no checkpoint file to drift from). If the grid
+config changed since the series was recorded, it truncates and starts fresh
+(can't safely mix grids in one series). `restart: unless-stopped` (container)
+or Task Scheduler "restart on failure" (Windows) relaunches after a drop,
+and the run resumes from the series.
+
+## Cloud / overnight container
+
+`docker compose up grid` runs the live runner as a restartable service
+(`docker-compose.yml` → `grid`). It shares the app image, mounts `./reports`
+so the series survives container recreation, and follows the deployed grid.
+On a cloud VM with Docker set to start on boot, a reboot → daemon restart →
+`grid` container restarts → `grid_live.py` resumes from the mounted series.
+Monitor (`scripts/grid_monitor.py`) is not run in the container by default —
+add it (a second command/sidecar) when you want feed-death alerts in the cloud.

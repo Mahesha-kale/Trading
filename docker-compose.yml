@@ -32,5 +32,18 @@ services:
     ports: ["80:80"]
     volumes: ["./nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
 
+  # Overnight spot-grid live paper runner. Survives reboots: `restart:
+  # unless-stopped` relaunches on crash or daemon restart, and grid_live.py
+  # resumes bot state from the mounted reports/grid_live_series.jsonl (append
+  # + per-tick flush -> no data loss mid-run). g/K follow the deployed grid in
+  # reports/grid_bot.json; run_s here is the per-launch window.
+  grid:
+    build: .
+    env_file: .env
+    depends_on: [postgres]
+    restart: unless-stopped
+    volumes: ["./reports:/app/reports"]
+    command: ["python", "scripts/grid_live.py", "B-BTC_USDT", "86400"]
+
 volumes:
   pgdata:

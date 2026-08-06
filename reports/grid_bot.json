@@ -2,26 +2,150 @@
   "symbol": "BTCUSDT",
   "best_grid": {
     "g": 0.02,
-    "K": 20
+    "K": 10
   },
+  "deployable": false,
+  "deployed": null,
+  "surface": [
+    {
+      "g": 0.005,
+      "K": 10,
+      "train_sh": 1.31,
+      "oos_sh": -1.11,
+      "oos_end": 6284.4,
+      "oos_dd": -0.443
+    },
+    {
+      "g": 0.005,
+      "K": 20,
+      "train_sh": 1.16,
+      "oos_sh": -1.04,
+      "oos_end": 6354.3,
+      "oos_dd": -0.439
+    },
+    {
+      "g": 0.005,
+      "K": 40,
+      "train_sh": 1.19,
+      "oos_sh": -1.0,
+      "oos_end": 6443.8,
+      "oos_dd": -0.424
+    },
+    {
+      "g": 0.008,
+      "K": 10,
+      "train_sh": 1.42,
+      "oos_sh": -1.08,
+      "oos_end": 6405.2,
+      "oos_dd": -0.436
+    },
+    {
+      "g": 0.008,
+      "K": 20,
+      "train_sh": 1.35,
+      "oos_sh": -0.99,
+      "oos_end": 6615.7,
+      "oos_dd": -0.42
+    },
+    {
+      "g": 0.008,
+      "K": 40,
+      "train_sh": 1.37,
+      "oos_sh": -0.96,
+      "oos_end": 6571.1,
+      "oos_dd": -0.409
+    },
+    {
+      "g": 0.01,
+      "K": 10,
+      "train_sh": 1.45,
+      "oos_sh": -1.07,
+      "oos_end": 6420.8,
+      "oos_dd": -0.431
+    },
+    {
+      "g": 0.01,
+      "K": 20,
+      "train_sh": 1.41,
+      "oos_sh": -1.01,
+      "oos_end": 6556.7,
+      "oos_dd": -0.423
+    },
+    {
+      "g": 0.01,
+      "K": 40,
+      "train_sh": 1.46,
+      "oos_sh": -0.87,
+      "oos_end": 6867.4,
+      "oos_dd": -0.379
+    },
+    {
+      "g": 0.015,
+      "K": 10,
+      "train_sh": 1.57,
+      "oos_sh": -0.99,
+      "oos_end": 6734.4,
+      "oos_dd": -0.407
+    },
+    {
+      "g": 0.015,
+      "K": 20,
+      "train_sh": 1.59,
+      "oos_sh": -0.97,
+      "oos_end": 6643.8,
+      "oos_dd": -0.406
+    },
+    {
+      "g": 0.015,
+      "K": 40,
+      "train_sh": 1.57,
+      "oos_sh": -0.72,
+      "oos_end": 7423.4,
+      "oos_dd": -0.323
+    },
+    {
+      "g": 0.02,
+      "K": 10,
+      "train_sh": 1.6,
+      "oos_sh": -0.99,
+      "oos_end": 6797.6,
+      "oos_dd": -0.405
+    },
+    {
+      "g": 0.02,
+      "K": 20,
+      "train_sh": 1.55,
+      "oos_sh": -0.96,
+      "oos_end": 6643.9,
+      "oos_dd": -0.403
+    },
+    {
+      "g": 0.02,
+      "K": 40,
+      "train_sh": 1.5,
+      "oos_sh": -0.59,
+      "oos_end": 7940.7,
+      "oos_dd": -0.279
+    }
+  ],
   "full": {
-    "sharpe": 1.53,
-    "max_dd": -0.117,
-    "cagr": 0.234,
-    "pf": 1.03,
-    "n": 90528,
-    "end_eq": 17215.1
+    "sharpe": 0.95,
+    "max_dd": -0.207,
+    "cagr": 0.161,
+    "pf": 1.02,
+    "n": 125568,
+    "end_eq": 17080.5
   },
   "oos": {
-    "sharpe": 1.08,
-    "max_dd": -0.173,
-    "cagr": 0.256,
-    "pf": 1.03,
-    "n": 27159,
-    "end_eq": 11932.2
+    "sharpe": -0.99,
+    "max_dd": -0.405,
+    "cagr": -0.302,
+    "pf": 0.98,
+    "n": 37671,
+    "end_eq": 6797.6
   },
-  "buyhold_full": 6.0046,
-  "buyhold_oos": 0.7127,
+  "buyhold_full": 2.8057,
+  "buyhold_oos": -0.4179,
   "fee": 0.001,
-  "verdict": "GRID EDGE OOS"
+  "verdict": "no grid edge OOS"
 }

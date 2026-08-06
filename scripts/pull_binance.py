@@ -68,7 +68,7 @@ def fetch_binance(symbol: str = "BTCUSDT", tf: str = "15m",
 
 if __name__ == "__main__":
     for sym in ("BTCUSDT", "ETHUSDT"):
-        df = fetch_binance(sym, "15m", "2023-01", "2025-07")
+        df = fetch_binance(sym, "15m", "2023-01", "2026-07")
         if df.empty:
             print(f"{sym} 15m: EMPTY (all months skipped)")
         else:

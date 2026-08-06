@@ -131,13 +131,20 @@ def main(symbol="BTCUSDT"):
     train = px.loc[:split]; oos = px.loc[split:]
     print(f"{symbol}: {len(px)} bars {px.index[0].date()}->{px.index[-1].date()} "
           f"| split {split.date()} | train {len(train)} oos {len(oos)}\n", flush=True)
-    # grid search on train: spacing g, rungs K
-    grids = [(g, K) for g in (0.005, 0.01, 0.02) for K in (10, 20, 40)]
+    # grid search on train: spacing g, rungs K. argmax-train picks the "edge
+    # exists" grid for the verdict, but train Sharpe over-fits to wide spacing
+    # (monotonically inflated by train-period trends). The DEPLOYED grid is only
+    # set when the edge actually holds on the CURRENT OOS slice — a grid that
+    # only worked on stale data is not deployable. Full surface saved for audit.
+    grids = [(g, K) for g in (0.005, 0.008, 0.01, 0.015, 0.02) for K in (10, 20, 40)]
     best, best_sh = None, -1e9
+    surface = []
     for g, K in grids:
-        m = metrics(grid_backtest(train, g, K))
-        if m["sharpe"] > best_sh:
-            best_sh, best = m["sharpe"], (g, K)
+        tr = metrics(grid_backtest(train, g, K)); oo = metrics(grid_backtest(oos, g, K))
+        surface.append({"g": g, "K": K, "train_sh": tr["sharpe"], "oos_sh": oo["sharpe"],
+                        "oos_end": oo["end_eq"], "oos_dd": oo["max_dd"]})
+        if tr["sharpe"] > best_sh:
+            best_sh, best = tr["sharpe"], (g, K)
     g, K = best
     print(f"best train grid: g={g} K={K} (train sh {best_sh})\n", flush=True)
     print(f"{'window':10} {'sh':>6} {'pf':>5} {'cagr':>6} {'maxdd':>7} {'end':>8}", flush=True)
@@ -156,7 +163,15 @@ def main(symbol="BTCUSDT"):
                else "no grid edge OOS" if oos["sharpe"] < 0
                else "marginal grid OOS")
     print(f"\nverdict: {verdict} (oos sh {oos['sharpe']}, end {oos['end_eq']})")
-    json.dump({"symbol": symbol, "best_grid": {"g": g, "K": K}, "full": full,
+    # deployable only when the edge holds on the current OOS slice. Deployed
+    # grid = best OOS Sharpe (one-time post-hoc pick, audited via the saved
+    # surface). None when refuted -> the live runner warns and runs paper for
+    # divergence validation only, never as an expected-edge strategy.
+    deployable = verdict == "GRID EDGE OOS"
+    d = max(surface, key=lambda r: r["oos_sh"]) if deployable else None
+    DEPLOYED = {"g": d["g"], "K": d["K"]} if d else None
+    json.dump({"symbol": symbol, "best_grid": {"g": g, "K": K}, "deployable": deployable,
+                "deployed": DEPLOYED, "surface": surface, "full": full,
                 "oos": oos, "buyhold_full": round(bh_full, 4), "buyhold_oos": round(bh_oos, 4),
                 "fee": FEE, "verdict": verdict},
               open("reports/grid_bot.json", "w"), indent=2, default=str)
