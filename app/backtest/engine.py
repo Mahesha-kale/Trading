@@ -63,6 +63,10 @@ class BacktestConfig:
     allow_short: bool = False
     maker_on_limit: bool = False  # if true, limit entries pay maker
     regime_sma: int | None = None  # block new longs while close < SMA(N); trailing still exits
+    funding_rates: "pd.Series | None" = None  # signed per-8h funding history
+    # (index=8h mark UTC, value=signed rate). If given, funding at each 8h event
+    # uses the asof rate (most recent <= bar ts) instead of the flat funding_rate
+    # -- models real dynamic/signed funding (negative in bears: longs receive).
 
 
 class Backtester:
@@ -109,7 +113,12 @@ class Backtester:
                 # (-cost, i.e. income). funding_paid is a SIGNED cost accumulator
                 # realized once at close via the exit pnl.
                 s = 1 if pos.side == "long" else -1
-                pos.funding_paid += s * pos.qty * row["close"] * cfg.funding_rate
+                if cfg.funding_rates is not None:
+                    r = cfg.funding_rates.asof(ts)
+                    rate = float(r) if pd.notna(r) else cfg.funding_rate
+                else:
+                    rate = cfg.funding_rate
+                pos.funding_paid += s * pos.qty * row["close"] * rate
                 next_funding = ts + FUNDING_INTERVAL
 
             # --- manage open position: SL/TP/trailing/liquidation ---

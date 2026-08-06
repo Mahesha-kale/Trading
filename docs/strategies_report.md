@@ -664,3 +664,162 @@ paper runner is built and verified via candle-poll fallback; full forward
 validation pending a longer run + WS availability. Microstructure remains feed-
 blocked. Recommended next step: run `scripts/grid_live.py` for ≥24h on the WS
 stream (when back) to validate live equity vs the 15m sim before any live capital.
+
+## §18. Real perp cost model + cost/short-engine fixes + regime-balanced walk-forward (research closed)
+
+> **Supersedes §14-17.** The §14 grid "first positive-OOS edge" was modeled at
+> `FEE=0.001` with **no 1% TDS**. Under the real CoinDCX spot cost model (0.169%
+> taker + GST + **1% TDS per sell**, ~1.4% round trip) the grid edge is refuted on
+> BTC and ETH (see `reports/grid_bot.json` `deployable: false` and the
+> `grid-edge-refuted-under-real-costs` memory). The grid infra (stateful
+> `GridBot`, live runner, hardening) is kept as reusable scaffolding; the
+> strategy itself is not deployable.
+
+### 18.1 Real perp cost model — TDS does NOT apply (verified)
+
+CoinDCX INR-margin perp futures carry **no 1% TDS** (verified via CoinDCX support
+2026-08-07: Section 194S covers "transfer" of a VDA; cash-settled futures are
+not a transfer; INR-margin futures have no per-trade TDS at all, taxed as
+speculative business income). So the `BacktestConfig` cost model (maker/taker fee
++ `slippage_bps` + `funding_rate`, no TDS) is **correct** for perp backtests.
+Sources linked in the `coindcx-spot-cost-model` memory. Do not add TDS to perp
+backtests; the 1% TDS drag is spot-only.
+
+### 18.2 Backtest engine fixes (this session, prior merge PR #7)
+
+- **Fee/funding double-count → single-count.** Entry fee AND funding were
+  subtracted from cash as-you-go AND again in the exit pnl → every backtest
+  over-paid fees. Now realized once at close. Lifted 4h ema_cross gated OOS sh
+  0.01 → 0.09.
+- **Daily-loss day reset bug.** `RiskManager.update_equity` reset the day via
+  wall-clock `datetime.now()` instead of the bar timestamp → in a multi-year
+  backtest the daily-loss limit tripped once and blocked every entry forever.
+  Now takes an optional `ts` (bar timestamp); engine + faithful pass it.
+- **Regime gate.** `BacktestConfig.regime_sma` blocks new longs while
+  `close < SMA(N)`; open positions still exit via trailing (don't force exits).
+  Symmetric when `allow_short`: longs above SMA(N), shorts below.
+- **Short side wired.** `BacktestConfig.allow_short` + sig `-1` opens a short
+  when flat; direction-aware `_manage` / liquidation / funding / EOD. supertrend
+  fixed to emit a **persistent-direction** signal (+1 uptrend / -1 downtrend) so
+  the engine re-arms entry after a trailing stop-out. 13 tests pass.
+- **Dynamic signed funding hook (NEW this session).** `BacktestConfig.funding_rates`
+  (a `pd.Series` of signed per-8h rates, index=8h mark UTC). If given, the engine
+  asof-looks-up the rate at each 8h funding event (most recent ≤ bar ts) instead
+  of the flat `funding_rate` — models real dynamic/signed funding (negative in
+  bears: longs receive, shorts pay). `None` falls back to the flat rate (all
+  existing tests / strategies unchanged).
+
+Engine exit contract (unchanged, easy to confuse): `engine.py` exits via ATR
+trailing (trend) or fixed-stop + `strategy.take_profit` (reversion), **NOT on
+signal 0**. Signal-0 exit lives in `faithful.py` + the live engine. Always use
+`cfg_for(kind)` from `scripts/rank.py`, not the default `BacktestConfig` (which
+gives a degenerate 1-trade trend result).
+
+### 18.3 Daily (1d) trend — no edge, bear beta
+
+`scripts/daily_trend.py` (15m→1d resample, 1308 bars 2023-01→2026-07, 70/30
+split 2025-07-04, trend cfg + `regime_sma=200`, real perp costs, long-only AND
+long/short, full + OOS + 4-fold walk-forward):
+
+- Long-only + gate: **0 OOS trades** — gate blocks every long in the downtrend
+  (no bleed), but sharpe 0 = "don't lose", not edge.
+- supertrend long/short OOS sh +0.77 (7 trades) LOOKED positive. Walk-forward
+  refutes: fold-2 (+78% uptrend) blows up **-686** (sh -3.10), agg OOS net -354.
+  Pure bear beta — shorts profit only in the one downtrend fold, annihilated in
+  strong uptrends.
+- ema_cross long/short OOS sh +1.27 but **2 trades** (statistically void).
+- Daily IS structurally cleaner than 4h (less churn) but the short side trades
+  bull returns for downtrend protection and nets negative across regimes.
+
+### 18.4 Non-laggy breakout/momentum + mean-reversion on 4h — no edge, bull beta
+
+`scripts/breakout_4h.py` (15m→4h, 7848 bars, train-tuned params, gated +
+ungated, full + OOS):
+
+- Breakout/momentum (donchian, ichimoku, obv_divergence, adx_trend) = full-
+  positive / OOS-negative = **bull beta**, same trap as laggy crossover.
+  ichimoku cleanest: full +1240 / OOS -883.
+- **adx_trend bleeds least OOS (sh -0.24 ungated)** vs laggy ema_cross (-0.69):
+  the **ADX>threshold chop filter reduces whipsaw** — the one structural idea
+  that works, but not enough to flip OOS positive.
+- **The `regime_sma=200` gate does NOT keep longs flat on 4h.** The choppy
+  downtrend crosses SMA200 on rallies → 21-30 OOS trades still fire and bleed.
+  Only on daily did the gate yield 0 OOS trades. **Gate value is TF-dependent**
+  and on 4h it often made OOS *worse* (adx -0.24 ungated → -0.97 gated; cci -2.43
+  → -4.29). Use the gate on daily, not 4h.
+- Mean-reversion (keltner, stochrsi, cci) is WORSE than trend: OOS is a
+  downtrend-with-rallies, not a range → buying dips = catching knives (keltner
+  OOS sh -3.06, cci OOS sh -4.29). "Buy dips profit in chop" refuted for this OOS.
+
+### 18.5 Dynamic signed funding — no verdict moves
+
+`scripts/pull_funding.py` pulls real Binance fundingRate history (3924 8h marks,
+2023-01→2026-07, signed; cached `reports/binance_BTCUSDT_funding.csv`).
+`scripts/real_funding.py` re-tests the marginal candidates fixed vs real funding:
+
+- Real funding is **LOWER** than the fixed +0.0001: full mean +0.000066, OOS
+  mean +0.000034, only **22% negative** in OOS — the "downtrend" was a grind, not
+  a crash; funding stayed positive. The negative-funding-rebates-longs hypothesis
+  was wrong; longs just pay *less*.
+- Long-only gated nudges up: ema_cross 4h + SMA200 gate OOS sh **0.09 → 0.13**
+  (net +25 → +39, pf 1.07 → 1.11). All-time best improves marginally — still
+  breakeven, **not deployable**.
+- Long/short ≈ unchanged (longs pay less, shorts receive less → cancels).
+
+### 18.6 Regime-balanced walk-forward — the fairest test, NOTHING survives
+
+`scripts/regime_wf.py`: K=4 contiguous time-folds, FIXED params (no per-fold
+tuning — stringent "one config generalizes across every regime" test), real
+funding, each fold scored as OOS. Folds: f1 up +126%, f2 up +80%, f3 up +66%,
+**f4 dn -43%** (data bull-heavy: the only major downtrend is 2025-26). Rubric:
+robust = positive net in >half folds AND across BOTH regime types.
+
+| candidate | f1 up | f2 up | f3 up | f4 dn | agg | pos | verdict |
+|---|---|---|---|---|---|---|---|
+| **ema_cross 4h L gated** | +434 | +129 | +84 | **-282** | +365 | 3/4 | **bull-beta** |
+| supertrend 4h L gated | -16 | -45 | -147 | -116 | -324 | 0/4 | lose-all |
+| adx_trend 4h L gated | -55 | -115 | -342 | -458 | -970 | 0/4 | lose-all |
+| adx_trend 4h L ungated | +429 | -446 | -361 | -331 | -708 | 1/4 | bull-beta |
+| ema_cross 1d L gated | 0 | -45 | 0 | 0 | -45 | 0/4 | inactive |
+| supertrend 1d L gated | 0 | -117 | +57 | 0 | -60 | 1/4 | inactive |
+| supertrend 4h L/S ungated | +193 | **-804** | -99 | +369 | -340 | 2/4 | bear-beta |
+| supertrend 1d L/S | +298 | -27 | -250 | -64 | -43 | 1/4 | lose |
+| ema_cross 4h L/S | +73 | -694 | +979 | **-742** | -384 | 2/4 | whipsaw |
+
+**Zero strategies are robust.** The all-time best (ema_cross 4h + SMA200 gate) is
+**pure bull-beta**: +434/+129/+84 in the three up folds, **-282 in the downtrend
+fold** — exactly what the fixed 70/30 split hid (it scored only the downtrend,
+averaging the loss against the bull train = "breakeven"). The gate **lags**: fold4
+starts 2025-04 (price still near SMA200) so it admits longs in the *early*
+downtrend → they stop out → -282; it only blocks in the *late* downtrend. No
+downtrend protection. Long/short blows up in strong uptrends (-804 in f2 +80%).
+No config nets positive across both bull and bear regimes.
+
+### 18.7 Overall verdict — research closed
+
+**No deployable edge on BTC 5m→1d under real perp costs.** Exhausted across:
+spot grid, long/short grid, ensemble, funding carry, macro prior, supertrend,
+ema_cross, rsi_reversal, daily trend, breakout/momentum, mean-reversion,
+dynamic funding, and regime-balanced walk-forward — TFs 5m→1d, gated/ungated,
+long/long-short, fixed/real funding.
+
+The structural conclusion: long-only rides the bull and bleeds in the bear;
+long/short bleeds in the bull and profits in the bear; neither nets positive
+across both. Every apparent edge is regime beta that the fixed 70/30 split
+(landing OOS entirely in the 2025-26 downtrend) could not expose — the regime-
+balanced walk-forward does, and nothing survives it. The all-time best remains
+**ema_cross 4h + SMA200 gate, long-only, real funding = OOS sh 0.13 = breakeven**,
+not deployable.
+
+**Delivered this session (kept):** real perp cost model + TDS verification;
+`BacktestConfig.funding_rates` dynamic-funding hook; `scripts/daily_trend.py`,
+`scripts/breakout_4h.py`, `scripts/pull_funding.py`, `scripts/real_funding.py`,
+`scripts/regime_wf.py`; real funding cache
+`reports/binance_BTCUSDT_funding.csv`; 13 tests pass.
+
+**Remaining lower-EV directions:** (1) a different asset perp trend + regime
+walk-forward (ETH grid already refuted under TDS; the edge is regime-structural,
+likely asset-agnostic); (2) ensemble/risk-parity of the breakeven signals (no edge
+to combine — §11 already showed diversification is an in-sample artifact); (3)
+a new edge source entirely (on-chain, cross-exchange basis, or order-flow /
+microstructure once the CoinDCX WS feed is available, §15).
