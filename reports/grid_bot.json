@@ -1,159 +1,321 @@
 {
   "symbol": "BTCUSDT",
-  "best_grid": {
-    "g": 0.02,
+  "fee": 0.0019942,
+  "tds": 0.01,
+  "best_long": {
+    "g": 0.04,
     "K": 10
   },
+  "best_longshort": {
+    "g": 0.04,
+    "K": 40
+  },
+  "best_family": "long/short",
   "deployable": false,
   "deployed": null,
   "surface": [
     {
-      "g": 0.005,
+      "g": 0.01,
       "K": 10,
-      "train_sh": 1.31,
-      "oos_sh": -1.11,
-      "oos_end": 6284.4,
-      "oos_dd": -0.443
+      "train_sh": 0.02,
+      "oos_sh": -1.29,
+      "oos_end": 5476.6,
+      "oos_dd": -0.489
     },
     {
-      "g": 0.005,
+      "g": 0.01,
       "K": 20,
-      "train_sh": 1.16,
-      "oos_sh": -1.04,
-      "oos_end": 6354.3,
-      "oos_dd": -0.439
+      "train_sh": 0.02,
+      "oos_sh": -1.25,
+      "oos_end": 5480.6,
+      "oos_dd": -0.491
     },
     {
-      "g": 0.005,
+      "g": 0.01,
       "K": 40,
-      "train_sh": 1.19,
-      "oos_sh": -1.0,
-      "oos_end": 6443.8,
+      "train_sh": -0.05,
+      "oos_sh": -1.09,
+      "oos_end": 5924.6,
+      "oos_dd": -0.452
+    },
+    {
+      "g": 0.015,
+      "K": 10,
+      "train_sh": 0.48,
+      "oos_sh": -1.19,
+      "oos_end": 5929.6,
+      "oos_dd": -0.451
+    },
+    {
+      "g": 0.015,
+      "K": 20,
+      "train_sh": 0.46,
+      "oos_sh": -1.12,
+      "oos_end": 6015.3,
+      "oos_dd": -0.444
+    },
+    {
+      "g": 0.015,
+      "K": 40,
+      "train_sh": 0.43,
+      "oos_sh": -0.92,
+      "oos_end": 6716.9,
+      "oos_dd": -0.378
+    },
+    {
+      "g": 0.02,
+      "K": 10,
+      "train_sh": 0.73,
+      "oos_sh": -1.15,
+      "oos_end": 6200.0,
+      "oos_dd": -0.433
+    },
+    {
+      "g": 0.02,
+      "K": 20,
+      "train_sh": 0.69,
+      "oos_sh": -1.06,
+      "oos_end": 6257.2,
       "oos_dd": -0.424
     },
     {
-      "g": 0.008,
+      "g": 0.02,
+      "K": 40,
+      "train_sh": 0.65,
+      "oos_sh": -0.78,
+      "oos_end": 7341.3,
+      "oos_dd": -0.321
+    },
+    {
+      "g": 0.03,
       "K": 10,
-      "train_sh": 1.42,
+      "train_sh": 0.99,
       "oos_sh": -1.08,
-      "oos_end": 6405.2,
-      "oos_dd": -0.436
+      "oos_end": 6467.2,
+      "oos_dd": -0.41
     },
     {
-      "g": 0.008,
+      "g": 0.03,
       "K": 20,
-      "train_sh": 1.35,
-      "oos_sh": -0.99,
-      "oos_end": 6615.7,
-      "oos_dd": -0.42
+      "train_sh": 0.95,
+      "oos_sh": -0.9,
+      "oos_end": 6882.5,
+      "oos_dd": -0.367
     },
     {
-      "g": 0.008,
+      "g": 0.03,
       "K": 40,
-      "train_sh": 1.37,
-      "oos_sh": -0.96,
-      "oos_end": 6571.1,
-      "oos_dd": -0.409
+      "train_sh": 0.92,
+      "oos_sh": -0.67,
+      "oos_end": 8295.5,
+      "oos_dd": -0.229
     },
     {
-      "g": 0.01,
+      "g": 0.04,
       "K": 10,
-      "train_sh": 1.45,
-      "oos_sh": -1.07,
-      "oos_end": 6420.8,
-      "oos_dd": -0.431
+      "train_sh": 1.13,
+      "oos_sh": -1.02,
+      "oos_end": 6621.6,
+      "oos_dd": -0.398
     },
     {
-      "g": 0.01,
+      "g": 0.04,
       "K": 20,
-      "train_sh": 1.41,
-      "oos_sh": -1.01,
-      "oos_end": 6556.7,
-      "oos_dd": -0.423
+      "train_sh": 1.1,
+      "oos_sh": -0.76,
+      "oos_end": 7420.3,
+      "oos_dd": -0.318
     },
     {
-      "g": 0.01,
+      "g": 0.04,
       "K": 40,
-      "train_sh": 1.46,
-      "oos_sh": -0.87,
-      "oos_end": 6867.4,
-      "oos_dd": -0.379
-    },
-    {
-      "g": 0.015,
-      "K": 10,
-      "train_sh": 1.57,
-      "oos_sh": -0.99,
-      "oos_end": 6734.4,
-      "oos_dd": -0.407
-    },
-    {
-      "g": 0.015,
-      "K": 20,
-      "train_sh": 1.59,
-      "oos_sh": -0.97,
-      "oos_end": 6643.8,
-      "oos_dd": -0.406
-    },
-    {
-      "g": 0.015,
-      "K": 40,
-      "train_sh": 1.57,
-      "oos_sh": -0.72,
-      "oos_end": 7423.4,
-      "oos_dd": -0.323
-    },
-    {
-      "g": 0.02,
-      "K": 10,
-      "train_sh": 1.6,
-      "oos_sh": -0.99,
-      "oos_end": 6797.6,
-      "oos_dd": -0.405
-    },
-    {
-      "g": 0.02,
-      "K": 20,
-      "train_sh": 1.55,
-      "oos_sh": -0.96,
-      "oos_end": 6643.9,
-      "oos_dd": -0.403
-    },
-    {
-      "g": 0.02,
-      "K": 40,
-      "train_sh": 1.5,
-      "oos_sh": -0.59,
-      "oos_end": 7940.7,
-      "oos_dd": -0.279
+      "train_sh": 1.07,
+      "oos_sh": -0.66,
+      "oos_end": 8803.8,
+      "oos_dd": -0.167
     }
   ],
-  "gated_oos": {
-    "sharpe": -0.56,
-    "max_dd": -0.252,
-    "cagr": -0.162,
-    "pf": 0.99,
-    "n": 37671,
-    "end_eq": 8269.4
-  },
+  "surface_longshort": [
+    {
+      "g": 0.01,
+      "K": 10,
+      "train_sh": 0.1,
+      "oos_sh": -2.61,
+      "oos_end": 7238.1,
+      "oos_dd": -0.308
+    },
+    {
+      "g": 0.01,
+      "K": 20,
+      "train_sh": 0.6,
+      "oos_sh": -2.78,
+      "oos_end": 7330.2,
+      "oos_dd": -0.28
+    },
+    {
+      "g": 0.01,
+      "K": 40,
+      "train_sh": -0.85,
+      "oos_sh": -2.1,
+      "oos_end": 7730.7,
+      "oos_dd": -0.242
+    },
+    {
+      "g": 0.015,
+      "K": 10,
+      "train_sh": 0.6,
+      "oos_sh": -1.61,
+      "oos_end": 8384.3,
+      "oos_dd": -0.207
+    },
+    {
+      "g": 0.015,
+      "K": 20,
+      "train_sh": -0.02,
+      "oos_sh": -1.77,
+      "oos_end": 8296.9,
+      "oos_dd": -0.191
+    },
+    {
+      "g": 0.015,
+      "K": 40,
+      "train_sh": 0.6,
+      "oos_sh": -1.34,
+      "oos_end": 8518.9,
+      "oos_dd": -0.168
+    },
+    {
+      "g": 0.02,
+      "K": 10,
+      "train_sh": 0.7,
+      "oos_sh": -1.08,
+      "oos_end": 8971.7,
+      "oos_dd": -0.161
+    },
+    {
+      "g": 0.02,
+      "K": 20,
+      "train_sh": -0.78,
+      "oos_sh": -1.38,
+      "oos_end": 8680.0,
+      "oos_dd": -0.173
+    },
+    {
+      "g": 0.02,
+      "K": 40,
+      "train_sh": -0.16,
+      "oos_sh": -0.95,
+      "oos_end": 8959.7,
+      "oos_dd": -0.138
+    },
+    {
+      "g": 0.03,
+      "K": 10,
+      "train_sh": 0.02,
+      "oos_sh": -0.77,
+      "oos_end": 9338.1,
+      "oos_dd": -0.153
+    },
+    {
+      "g": 0.03,
+      "K": 20,
+      "train_sh": 0.28,
+      "oos_sh": -0.89,
+      "oos_end": 9070.7,
+      "oos_dd": -0.149
+    },
+    {
+      "g": 0.03,
+      "K": 40,
+      "train_sh": -0.01,
+      "oos_sh": -0.59,
+      "oos_end": 9470.2,
+      "oos_dd": -0.096
+    },
+    {
+      "g": 0.04,
+      "K": 10,
+      "train_sh": -0.06,
+      "oos_sh": -0.63,
+      "oos_end": 9420.6,
+      "oos_dd": -0.148
+    },
+    {
+      "g": 0.04,
+      "K": 20,
+      "train_sh": -0.29,
+      "oos_sh": -0.64,
+      "oos_end": 9297.8,
+      "oos_dd": -0.128
+    },
+    {
+      "g": 0.04,
+      "K": 40,
+      "train_sh": 0.73,
+      "oos_sh": -0.45,
+      "oos_end": 9702.9,
+      "oos_dd": -0.069
+    }
+  ],
   "full": {
-    "sharpe": 0.95,
-    "max_dd": -0.207,
-    "cagr": 0.161,
-    "pf": 1.02,
+    "sharpe": 0.38,
+    "max_dd": -0.263,
+    "cagr": 0.052,
+    "pf": 1.01,
     "n": 125568,
-    "end_eq": 17080.5
+    "end_eq": 11972.0
   },
   "oos": {
-    "sharpe": -0.99,
-    "max_dd": -0.405,
-    "cagr": -0.302,
+    "sharpe": -1.02,
+    "max_dd": -0.398,
+    "cagr": -0.318,
     "pf": 0.98,
     "n": 37671,
-    "end_eq": 6797.6
+    "end_eq": 6621.6
+  },
+  "full_longshort": {
+    "sharpe": 0.34,
+    "max_dd": -1.411,
+    "cagr": -0.161,
+    "pf": 1.16,
+    "n": 125568,
+    "end_eq": 5327.7
+  },
+  "oos_longshort": {
+    "sharpe": -0.45,
+    "max_dd": -0.069,
+    "cagr": -0.028,
+    "pf": 0.99,
+    "n": 37671,
+    "end_eq": 9702.9
+  },
+  "regime_switch": {
+    "train": {
+      "sharpe": -0.65,
+      "max_dd": -0.437,
+      "cagr": -0.186,
+      "pf": 0.99,
+      "n": 87898,
+      "end_eq": 5976.5
+    },
+    "oos": {
+      "sharpe": -0.19,
+      "max_dd": -0.02,
+      "cagr": -0.003,
+      "pf": 1.0,
+      "n": 37671,
+      "end_eq": 9968.1
+    },
+    "full": {
+      "sharpe": 0.06,
+      "max_dd": -0.535,
+      "cagr": -0.028,
+      "pf": 1.0,
+      "n": 125568,
+      "end_eq": 9020.5
+    }
   },
   "buyhold_full": 2.8057,
   "buyhold_oos": -0.4179,
-  "fee": 0.001,
   "verdict": "no grid edge OOS"
 }

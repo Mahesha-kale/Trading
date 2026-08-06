@@ -34,7 +34,7 @@ import pandas as pd
 from app.config import settings
 from app.data.downloader import download_ohlcv
 sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(__file__)))
-from grid_bot import FEE, GridBot  # noqa: E402
+from grid_bot import FEE, TDS, GridBot  # noqa: E402
 
 PAIR = "B-BTC_USDT"
 PRICE_CHAN = "{pair}@prices"          # spot LTP channel (price-change event)
@@ -194,9 +194,15 @@ def main(pair=PAIR, run_s=3600, g=None, K=None):
     if SUMMARY_PATH.exists():
         try:
             s = json.loads(SUMMARY_PATH.read_text())
-            if s.get("g") not in (None, g) or s.get("K") not in (None, K):
-                print(f"config changed (was g={s.get('g')} K={s.get('K')}) "
-                      f"-> truncating series+log, fresh start", flush=True)
+            # g/K AND the fee/tds model define the grid; a series recorded under
+            # a different cost model can't be safely resumed (replay would step
+            # the wrong grid) -> truncate and start fresh. Strict == : a missing
+            # fee/tds means an older cost model -> truncate.
+            changed = (s.get("g") != g or s.get("K") != K
+                       or s.get("fee") != FEE or s.get("tds") != TDS)
+            if changed:
+                print(f"config changed (was g={s.get('g')} K={s.get('K')} fee={s.get('fee')} "
+                      f"tds={s.get('tds')}) -> truncating series+log, fresh start", flush=True)
                 LOG_PATH.write_text("")
                 SERIES_PATH.write_text("")
         except (json.JSONDecodeError, OSError):
@@ -218,12 +224,12 @@ def main(pair=PAIR, run_s=3600, g=None, K=None):
         ser_f.flush()
         n_series += 1
 
-    bot = GridBot(g, K, FEE, capital=10000.0)
+    bot = GridBot(g, K, FEE, capital=10000.0, tds=TDS)
     resumed = resume_from_series(bot)
     if not is_deployable():
         log("WARNING: grid_bot.json marks the edge as refuted on current OOS — "
             "running PAPER for divergence validation only, NOT an expected-edge strategy")
-    log(f"grid_live start pair={pair} g={g} K={K} fee={FEE} run={run_s}s"
+    log(f"grid_live start pair={pair} g={g} K={K} fee={FEE} tds={TDS} run={run_s}s"
         + (f" (resumed from {resumed} ticks)" if resumed else ""))
 
     async def go():
@@ -245,7 +251,8 @@ def main(pair=PAIR, run_s=3600, g=None, K=None):
     log(f"done: {n} samples | final equity {eq:.2f} | pnl {pnl:+.2f} | "
         f"open_buys {len(bot.open_buys)} | anchor {bot.anchor} | "
         f"series {total_series} ticks")
-    json.dump({"pair": pair, "g": g, "K": K, "samples": total_series,
+    json.dump({"pair": pair, "g": g, "K": K, "fee": FEE, "tds": TDS,
+                "samples": total_series,
                 "final_equity": round(eq, 2), "pnl": round(pnl, 2),
                 "open_buys": len(bot.open_buys), "resumed": resumed,
                 "series_path": str(SERIES_PATH), "series_n": total_series},
