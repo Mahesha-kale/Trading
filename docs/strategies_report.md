@@ -1167,3 +1167,137 @@ exchange-flow (the prompt's examples) were not reachable free (DeFi Llama
 stablecoin endpoints 404; on-chain flows are paid CryptoQuant/Glassnode) — VIX/
 SP500 were the accessible free external series. Step 4 closes the macro-prior
 direction: no deployable external-regime prior at retail/free-data resolution.
+
+## §23. Carry basis tail quantified (step 2 follow-up) — small in-sample, but rare-event cascade is the real wipe; classic "pennies before a steamroller"
+
+> §20 flagged an UNMODELED basis/short-squeeze tail as the carry's deployability
+> blocker. Step 2 follow-up: quantify it from REAL perp-vs-spot basis (Binance
+> Vision spot 15m vs the cached perp 15m, 2023-01→2026-07, `scripts/basis_risk.py`).
+
+### 23.1 Binance data bug found + fixed (reusable)
+Binance Vision switched **spot klines from milliseconds (13-digit) to microseconds
+(16-digit) ~2025**; futures stayed ms. `pd.to_datetime(unit="ms")` overflowed on
+the µs rows → garbage timestamps (year 58551) → all 2025-2026 spot bars silently
+dropped. Fixed in `pull_binance.py` (per-file unit normalization + range filter);
+also added `market="spot"` so spot is pullable by `python -m scripts.pull_binance
+spot BTCUSDT ETHUSDT SOLUSDT`. Spot 15m now cached for BTC/ETH/SOL.
+
+### 23.2 Basis distribution (125563 bars each, full window)
+
+basis B = perp/spot − 1 (bps). Carry harvest = SHORT perp + LONG spot → PnL vs
+basis = B_entry − B_close → PROFITS when B falls (discount widens), LOSES when B
+rises (premium widens / short squeeze). Margin-call drawdown = max premium.
+
+| sym | mean | std | p99 | max (premium) | min (discount) | 1yr funding | worst spike | spikes>1yr |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| BTC | −2.7 | 4.0 | +10 | **+69** | −186 | 8.20% | 71 bps | 0 |
+| ETH | −2.6 | 4.4 | +10 | **+76** | −384 | 8.59% | 78 bps | 0 |
+| SOL | −3.1 | 5.8 | +13 | **+59** | −260 | 11.93% | 75 bps | 0 |
+
+- Mean basis NEGATIVE (perp persistently at a small discount to spot). For the
+  harvest that is mildly favorable at entry (short perp below spot, mean-reverts
+  to 0 → small gain), not a drag.
+- Worst adverse PREMIUM spike (the squeeze cost) = **+0.59% to +0.76%** (59-78 bps).
+- 1yr funding income = **820-1190 bps**. Worst in-sample spike is **~1/11 to 1/16
+  of one year's funding income**. Zero 8h windows had a premium > 1yr funding.
+- Discount spikes (favorable) are larger (−1.9 to −3.8%): the basis exposure is
+  **asymmetric and favorable** in this window — bigger moves help the carry leg
+  than hurt it.
+
+### 23.3 Verdict — basis does NOT refute the carry in-sample, but it IS the classic carry shape
+In 2023-2026 the basis tail is small relative to income → the carry survives and
+the §20 ~7%/yr (per-notional) holds after basis. **But the window excludes the
+catastrophic liquidation cascades** — March 2020, May 2022 (LUNA), Nov 2022 (FTX)
+— where perp-spot basis blew out **5-20%**. Those are the wipe events; this calm-
+to-bull window had none, so the tail is understated.
+
+Stress (historical cascade magnitude, arithmetic not simulation): a **10% perp-
+premium spike** = 1000 bps > 820-1190 bps (1yr funding) → wipes **~0.8-1.4 years**
+of funding income in a single event. On total capital (perp margin + full spot ≈
+2× notional) the carry nets ~4%/yr; one 10% spike every ~3-4yr (historical cadence)
+≈ wipes the entire cycle's capital return. **Net ≈ 0 over a full cycle** — the
+textbook "picking up pennies in front of a steamroller" carry profile.
+
+**Status: still watchlist, now characterized.** Basis is a rare-event tail, not a
+constant drag; the carry is a low-return (~4%/yr on capital), left-tail-exposed
+strategy that breaks even over a cycle containing one cascade. To promote to
+deploy would need an explicit squeeze hedge (e.g. close on a funding-rate /
+basis blowout trigger, or cap leverage so a 15-20% spike is survivable with
+reserve) — that's a real engineering project, not a parameter tweak, and the
+risk/reward (≈4%/yr for tail-wipe) is not attractive. The §20 blocker stands and
+is now quantified: not "unmodeled" but "rare-event, in-sample-small, cycle-wiping."
+Consistent with §20's "watchlist, not deployed."
+
+## §24. Carry basis-stop de-risk (step 2 engineering) — a 100bps stop tames the tail at ~zero in-sample cost; bounded but still not a robust edge
+
+> §23 quantified the carry's basis tail as rare-event but cycle-wiping (a 10%
+> perp-premium blowout > 1yr funding income). (c) asks: can a BASIS-STOP make the
+> tail BOUNDED for an affordable insurance cost? `scripts/carry_stop.py`.
+
+### 24.1 Design
+One-sided harvest (short perp + long spot, §20) + a basis-stop: while holding, if
+perp premium B (bps) > stop_bps, FLATTEN (realize the adverse basis = stop_bps of
+notional + close fees + 1% TDS on the spot sell); re-enter only when B < stop/2
+(hysteresis, don't reopen into an ongoing squeeze) AND funding positive. Simulated
+at **15m resolution** (basis-stop checks every bar — 8h-mark sampling misses the
+intra-8h spikes; §23's +69-76bps maxima were intra-8h). Funding accrues PRO-RATA
+per 15m bar, (1+r)^(1/32) while holding (Binance funding is time-pro-rata; also
+gap-robust — 35% of 8h marks miss the 15m grid). Baseline (no stop) reproduces §20:
+BTC +29.7%/7.5%/yr, ETH +23.4%/6.0%, SOL +16.5%/4.3%.
+
+### 24.2 Results — stop level vs in-sample cost (2023-2026, NO cascade in window)
+
+| sym | stop | net% | /yr% | stops | cost vs none |
+|---|---:|---:|---:|---:|---:|
+| BTC | none | 29.7 | 7.53 | 0 | — |
+| BTC | 30 | 13.2 | 3.53 | 7 | −16.5pp (whipsaw) |
+| BTC | 50 | 24.8 | 6.39 | 1 | −4.9pp |
+| BTC | **100** | **29.7** | **7.53** | **0** | **0 (free)** |
+| ETH | none | 23.4 | 6.04 | 0 | — |
+| ETH | 30 | 17.6 | 4.62 | 3 | −5.8pp |
+| ETH | 50 | 21.1 | 5.48 | 1 | −2.3pp |
+| ETH | **100** | **23.4** | **6.04** | **0** | **0 (free)** |
+| SOL | none | 16.5 | 4.34 | 0 | — |
+| SOL | 30 | 9.8 | 2.65 | 3 | −6.7pp |
+| SOL | 50 | 11.4 | 3.07 | 2 | −5.1pp |
+| SOL | **100** | **16.5** | **4.34** | **0** | **0 (free)** |
+
+- **A 100bps (1%) basis-stop is FREE in-sample**: 0 triggers across all three
+  assets (the 2023-2026 max premium was 69-76bps < 100). It costs nothing in calm
+  windows yet CAPS the worst-case basis loss at 1% of notional.
+- 50bps stop: 1-2 false triggers, ~1-2pp/yr cost, caps tail at 0.5%.
+- 30bps stop: 3-7 triggers, whipsawed by normal basis noise → too tight (−6 to
+  −16pp). The basis noise floor sits ~30-50bps; a stop must sit ABOVE it to avoid
+  self-destruction, which 100bps does.
+
+### 24.3 Verdict — tail bounded, but carry is still not a robust edge
+The basis-stop is a **real improvement**: the §23 unbounded cascade (5-20%) is
+capped at ~1% (stop) for ~0 in-sample insurance premium. Stress: a 10% perp-
+premium cascade uncapped = −10%; with a 100bps stop = −1% → **saves ~9% per event
+≈ ~1.2yr of BTC funding income preserved per cascade.** The carry moves from
+"watchlist, unbounded-tail-blocked" to "watchlist, bounded-tail, execution-
+dependent." The §23 blocker is no longer "unmodeled tail" but is now:
+
+1. **Execution in a squeeze**: a real cascade gaps the premium from <100bps to
+   500-2000bps in one or few prints (liquidity vanishes). The 100bps stop may fill
+   at 500bps+ → real loss > 1%. The 1% cap assumes you flatten at the stop level;
+   in practice the cap is "first-liquid-print," likely 2-5%. Still far below 20%,
+   so the stop helps, but not to 1%. Needs a conditional/limit order pre-staged.
+2. **Missed funding income while flat** after a stop (reopen hysteresis keeps you
+   out through the volatile period).
+3. **CoinDCX venue**: Binance basis ≠ CoinDCX INR-margin perp-spot basis; the stop
+   must trigger on the ACTUAL venue's basis (the §20 venue caveat stands).
+4. **The in-sample window has no cascade** → 0 stops means we can't DEMONSTRATE
+   the stop firing+protecting in a real event, only argue it from mechanism (a
+   >100bps premium WILL trigger it). The protection is mechanism-argued, not
+   walk-forward-proven.
+5. **Low return for complexity**: ~3.75%/yr on 2× capital (perp margin + full
+   spot), now with a bounded-but-execution-uncertain tail + two-leg real-time
+   basis monitoring + squeeze execution. Infrastructure-heavy for the return.
+
+**Status: still watchlist, now bounded-tail.** The basis-stop does what (c) asked
+— tames the tail affordably — but does not manufacture a robust OOS edge. The
+carry remains a low-return, left-tail-(now-bounded), venue-and-execution-dependent
+strategy. The honest stopping blocker moved from "unmodeled tail" to "execution in
+a squeeze + venue basis + low return for the complexity." No robust edge; the
+engineering de-risked the tail without changing the risk/reward enough to deploy.
