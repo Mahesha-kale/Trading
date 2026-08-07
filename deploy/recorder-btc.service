@@ -1,0 +1,16 @@
+[Unit]
+Description=CoinDCX microstructure trade recorder (B-BTC_USDT)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Trading
+Environment=PYTHONPATH=/home/ubuntu/Trading
+ExecStart=/home/ubuntu/Trading/.venv/bin/python /home/ubuntu/Trading/scripts/microstructure.py B-BTC_USDT
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
