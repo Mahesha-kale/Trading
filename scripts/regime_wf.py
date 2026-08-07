@@ -7,7 +7,11 @@ overfit). Each fold is tagged up/dn by its buy&hold sign.
 
 A strategy is robust only if: positive net in a MAJORITY of folds AND across
 BOTH regime types (a strategy that only profits in the downtrend fold = bear
-beta, not edge). Real per-8h funding (final cost model, no TDS). Usage: python scripts/regime_wf.py
+beta, not edge). Real per-8h funding (final cost model, no TDS).
+
+Multi-symbol (BTC/ETH/SOL): a different asset's regime sequence is the cheapest
+falsifier of "it's just BTC's regime luck." If the edge is regime-structural it
+shows on every asset; if it's BTC-luck it dies on ETH/SOL. Usage: python scripts/regime_wf.py
 """
 from __future__ import annotations
 
@@ -25,16 +29,17 @@ _sl.configure(wrapper_class=_sl.make_filtering_bound_logger(logging.ERROR),
 SMA = 200
 LEV = 3
 K = 4  # folds
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 
 
-def load_funding() -> pd.Series:
-    s = pd.read_csv("reports/binance_BTCUSDT_funding.csv", index_col=0)["rate"]
+def load_funding(symbol: str) -> pd.Series:
+    s = pd.read_csv(f"reports/binance_{symbol}_funding.csv", index_col=0)["rate"]
     s.index = pd.to_datetime(s.index, utc=True, format="ISO8601")
     return s.astype(float).sort_index()
 
 
-def resample(tf: str) -> pd.DataFrame:
-    df = pd.read_csv("reports/binance_BTCUSDT_15m.csv", index_col=0, parse_dates=True).sort_index()
+def resample(symbol: str, tf: str) -> pd.DataFrame:
+    df = pd.read_csv(f"reports/binance_{symbol}_15m.csv", index_col=0, parse_dates=True).sort_index()
     return df.resample(tf).agg({"open": "first", "high": "max", "low": "min",
                                 "close": "last", "volume": "sum"}).dropna()
 
@@ -69,27 +74,28 @@ def run_fold(name, params, seg, kind, short, gated, funding, am):
     return Backtester(get_strategy(name, p), cfg(kind, am, short, gated, funding)).run(seg)["metrics"]
 
 
-def main():
-    fr = load_funding()
-    df4, df1 = resample("4h"), resample("1D")
-    print(f"Regime-balanced walk-forward: K={K} contiguous folds, fixed params, real funding\n",
-          flush=True)
-    # (label, name, params, df, kind, short, gated, atr_mult)
-    cands = [
-        ("ema_cross 4h L gated",   "ema_cross",  {"fast": 21, "slow": 50}, df4, "trend", False, True,  3.0),
-        ("supertrend 4h L gated",   "supertrend", {"period": 10, "multiplier": 3.0}, df4, "trend", False, True, 3.0),
-        ("adx_trend 4h L gated",    "adx_trend",  {"adx_thresh": 25}, df4, "trend", False, True,  3.0),
-        ("adx_trend 4h L ungated",  "adx_trend",  {"adx_thresh": 28}, df4, "trend", False, False, 3.0),
-        ("ema_cross 1d L gated",    "ema_cross",  {"fast": 21, "slow": 50}, df1, "trend", False, True,  3.0),
-        ("supertrend 1d L gated",   "supertrend", {"period": 10, "multiplier": 3.0}, df1, "trend", False, True, 3.0),
-        ("supertrend 4h L/S ungated","supertrend",{"period": 10, "multiplier": 3.0}, df4, "trend", True,  False, 3.0),
-        ("supertrend 1d L/S",       "supertrend", {"period": 10, "multiplier": 3.0}, df1, "trend", True,  False, 3.0),
-        ("ema_cross 4h L/S",        "ema_cross",  {"fast": 21, "slow": 50}, df4, "trend", True,  False, 3.0),
-    ]
+# (label, name, params, tf, kind, short, gated, atr_mult)
+CANDS = [
+    ("ema_cross 4h L gated",   "ema_cross",  {"fast": 21, "slow": 50}, "4h", "trend", False, True,  3.0),
+    ("supertrend 4h L gated",   "supertrend", {"period": 10, "multiplier": 3.0}, "4h", "trend", False, True, 3.0),
+    ("adx_trend 4h L gated",    "adx_trend",  {"adx_thresh": 25}, "4h", "trend", False, True,  3.0),
+    ("adx_trend 4h L ungated",  "adx_trend",  {"adx_thresh": 28}, "4h", "trend", False, False, 3.0),
+    ("ema_cross 1d L gated",    "ema_cross",  {"fast": 21, "slow": 50}, "1D", "trend", False, True,  3.0),
+    ("supertrend 1d L gated",   "supertrend", {"period": 10, "multiplier": 3.0}, "1D", "trend", False, True, 3.0),
+    ("supertrend 4h L/S ungated","supertrend",{"period": 10, "multiplier": 3.0}, "4h", "trend", True,  False, 3.0),
+    ("supertrend 1d L/S",       "supertrend", {"period": 10, "multiplier": 3.0}, "1D", "trend", True,  False, 3.0),
+    ("ema_cross 4h L/S",        "ema_cross",  {"fast": 21, "slow": 50}, "4h", "trend", True,  False, 3.0),
+]
+
+
+def run_symbol(symbol: str):
+    fr = load_funding(symbol)
+    bars = {tf: resample(symbol, tf) for tf in {c[3] for c in CANDS}}
+    print(f"\n=== {symbol} | K={K} contiguous folds, fixed params, real funding ===", flush=True)
     print(f"{'candidate':26}{'fold':5}{'reg':4}{'bh%':>6}{'tr':>4}{'sh':>6}{'net':>9}{'dd':>7}{'pf':>6}",
           flush=True)
-    for label, name, params, df, kind, short, gated, am in cands:
-        segs = folds(df)
+    for label, name, params, tf, kind, short, gated, am in CANDS:
+        segs = folds(bars[tf])
         agg_net = 0.0; pos = 0; pos_up = 0; pos_dn = 0; n_up = n_dn = 0
         for i, seg in enumerate(segs):
             bh = seg["close"].iloc[-1] / seg["close"].iloc[0] - 1
@@ -104,11 +110,15 @@ def main():
                 n_dn += 1; pos_dn += r["net"] > 0
             print(f"{label:26}{i+1:5}{reg:4}{bh*100:6.0f}{r['tr']:4d}{r['sh']:6.2f}"
                   f"{r['net']:9.1f}{r['dd']:7.3f}{r['pf']:6.2f}", flush=True)
-        # robust: pos in >half folds AND positive in BOTH regime types
         robust = pos > K / 2 and pos_up > 0 and pos_dn > 0
         tag = "ROBUST" if robust else ("bear-beta" if pos_dn > pos_up else "bull-beta")
         print(f"{label:26} agg_net={agg_net:9.1f} pos={pos}/{K} (up {pos_up}/{n_up}, "
               f"dn {pos_dn}/{n_dn}) -> {tag}\n", flush=True)
+
+
+def main():
+    for sym in SYMBOLS:
+        run_symbol(sym)
     print("Robust = positive net in >half folds AND across BOTH up & dn regimes. "
           "bear-beta = only profits in downtrend folds; bull-beta = only in uptrend folds.")
 

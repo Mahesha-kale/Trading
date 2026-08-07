@@ -823,3 +823,347 @@ likely asset-agnostic); (2) ensemble/risk-parity of the breakeven signals (no ed
 to combine — §11 already showed diversification is an in-sample artifact); (3)
 a new edge source entirely (on-chain, cross-exchange basis, or order-flow /
 microstructure once the CoinDCX WS feed is available, §15).
+
+## §19. Multi-asset perp regime walk-forward (BTC / ETH / SOL) — one ETH outlier, not generalizable
+
+> Step 1 of the post-close plan: a different asset's regime sequence is the
+> cheapest falsifier of "it's just BTC's regime luck." Generalized
+> `scripts/regime_wf.py` to loop BTC/ETH/SOL (same 9 candidates, same FIXED
+> params — no per-fold/per-asset tuning, the stringent "one config generalizes
+> across every asset and regime" test). Pulled ETH/SOL 15m + funding from
+> Binance Vision (125568 bars each, 2023-01→2026-07; 3924 8h funding marks
+> each; ETH mean funding +0.000068, SOL +0.000035). Real per-8h signed funding,
+> lev 3, maker_on_limit, no TDS. K=4 contiguous folds, fixed dates per asset:
+
+| fold | window | BTC bh | ETH bh | SOL bh |
+|---|---|---|---|---|
+| f1 | 2023-01→2023-11 | +125% | +72% | **+467%** |
+| f2 | 2023-11→2024-10 | +78% | +25% | +172% |
+| f3 | 2024-10→2025-09 | +64% | +65% | +34% |
+| f4 | 2025-09→2026-07 | **-44%** | **-57%** | **-66%** |
+
+Full-window buy&hold: BTC +281%, ETH +56%, SOL +633%.
+
+### 19.1 Summary verdict (27 asset×strategy cells)
+
+| asset | strategy | agg | pos/4 | up | dn | verdict |
+|---|---|---:|---|---|---|---|
+| BTC | ema_cross 4h L gated | +365 | 3 | 3 | 0 | bull-beta |
+| BTC | supertrend 4h L gated | -324 | 0 | 0 | 0 | lose |
+| BTC | adx_trend 4h L gated | -970 | 0 | 0 | 0 | lose |
+| BTC | adx_trend 4h L ungated | -708 | 1 | 1 | 0 | bull-beta |
+| BTC | ema_cross 1d L gated | -45 | 0 | 0 | 0 | lose |
+| BTC | supertrend 1d L gated | -60 | 1 | 1 | 0 | bull-beta |
+| BTC | supertrend 4h L/S ungated | -340 | 2 | 1 | 1 | whipsaw |
+| BTC | supertrend 1d L/S | -43 | 1 | 1 | 0 | lose |
+| BTC | ema_cross 4h L/S | -384 | 2 | 2 | 0 | bull-beta |
+| ETH | ema_cross 4h L gated | -190 | 2 | 2 | 0 | bull-beta |
+| ETH | supertrend 4h L gated | -1069 | 1 | 1 | 0 | lose |
+| ETH | adx_trend 4h L gated | -151 | 1 | 1 | 0 | bull-beta |
+| ETH | adx_trend 4h L ungated | +573 | 3 | 3 | 0 | bull-beta |
+| ETH | ema_cross 1d L gated | +96 | 1 | 1 | 0 | inactive |
+| ETH | supertrend 1d L gated | +121 | 1 | 1 | 0 | bull-beta |
+| ETH | supertrend 4h L/S ungated | -1038 | 1 | 0 | 1 | bear-beta |
+| **ETH** | **supertrend 1d L/S** | **+1058** | **4** | **3** | **1** | **ROBUST** |
+| ETH | ema_cross 4h L/S | -1550 | 1 | 1 | 0 | lose |
+| SOL | ema_cross 4h L gated | -97 | 2 | 1 | 1 | bull-beta |
+| SOL | supertrend 4h L gated | -335 | 0 | 0 | 0 | lose |
+| SOL | adx_trend 4h L gated | -1425 | 1 | 1 | 0 | lose |
+| SOL | adx_trend 4h L ungated | -288 | 1 | 1 | 0 | bull-beta |
+| SOL | ema_cross 1d L gated | -14 | 1 | 1 | 0 | bull-beta |
+| SOL | supertrend 1d L gated | -128 | 1 | 1 | 0 | bull-beta |
+| SOL | supertrend 4h L/S ungated | +790 | 2 | 2 | 0 | bull-beta |
+| SOL | supertrend 1d L/S | -125 | 2 | 1 | 1 | bull-beta |
+| SOL | ema_cross 4h L/S | -178 | 2 | 1 | 1 | bull-beta |
+
+**Exactly one ROBUST flag in 27 cells: ETH supertrend 1d L/S.** It is positive in
+all 4 folds including the -57% downtrend fold, with 13-19 trades/fold (not a
+2-trade void result), sh 0.58-0.99.
+
+### 19.2 The ETH outlier — per-fold vs buy&hold
+
+ETH supertrend 1d L/S (period=10, mult=3, daily, long/short, lev 3, real funding):
+
+| fold | window | bh% | lev3 B&H | strat net | trades | sh | maxdd | pf |
+|---|---|---:|---:|---:|---|---:|---:|---:|
+| f1 | 2023-01→2023-11 | +72 | +216 | **+261** | 19 | 0.76 | 0.028 | 1.56 |
+| f2 | 2023-11→2024-10 | +25 | +75 | **+282** | 13 | 0.91 | 0.020 | 2.06 |
+| f3 | 2024-10→2025-09 | +65 | +195 | **+364** | 16 | 0.99 | 0.018 | 1.88 |
+| f4 | 2025-09→2026-07 | -57 | -171 | **+152** | 15 | 0.58 | 0.012 | 1.39 |
+| | | | **agg** | **+1058** | 63 | | | |
+
+It beats levered buy&hold in all 4 folds AND profits where B&H loses -171%
+(f4). On its own ETH folds this passes the "positive across both regimes" bar.
+
+### 19.3 Cross-asset replication — the falsifier
+
+The IDENTICAL fixed params (supertrend 1d L/S, period=10, mult=3, lev 3) on the
+other two assets:
+
+| asset | f1 up | f2 up | f3 up | f4 dn | agg | verdict |
+|---|---:|---:|---:|---:|---:|---|
+| BTC | +298 | -27 | -250 | -64 | **-43** | lose |
+| ETH | +261 | +282 | +364 | +152 | **+1058** | robust |
+| SOL | +95 | -16 | **-379** | +174 | **-125** | lose |
+
+BTC bleeds in f3 (choppy +64% grind, whipsaw) and f4; SOL blows up in f3 (-379,
+sh -1.27 — SOL's choppy +34% fold shreds the daily supertrend). **The ETH result
+does not replicate.** It is ETH-path-specific, not an asset-agnostic edge.
+
+### 19.4 Mechanism — why ETH and not BTC/SOL
+
+Full-window buy&hold separates the regimes: BTC +281%, ETH **+56%**, SOL +633%.
+ETH had the **lowest net drift but large two-way swings** (up to ~4000 in Mar-2024,
+back to ~2400, up again, down into f4). A long/short daily supertrend profits
+when price has big swings with modest net drift — longs catch the up legs, shorts
+catch the corrections, and neither side dominates. BTC (+281%) and SOL (+633%)
+were strong one-way bulls: the short side of the same L/S trend gets repeatedly
+stopped out in a bull and bleeds (BTC supertrend 4h L/S f2 -804; SOL f2 -327). So
+"ETH robust" is not "ETH trends cleaner" — it is "ETH's 2023-26 path had the most
+two-sided range per unit of net drift," exactly the path a L/S trend exploits and
+exactly what a one-way bull punishes. This is regime-path luck, not alpha.
+Deploying ETH supertrend 1d L/S = betting ETH keeps swinging two-way with low net
+drift, which is not established (a one-way ETH bull like 2020-21 would bleed it
+exactly as SOL's f1/f2 bull bleeds SOL).
+
+### 19.5 Verdict
+
+**No asset-agnostic robust edge.** The only ROBUST flag across 27 cells (ETH
+supertrend 1d L/S, +1058, 4/4 folds) is a single-asset, single-path artifact: it
+fails the cross-asset replication test (BTC -43, SOL -125 with identical fixed
+params) and its mechanism (profits on two-way-swing/low-drift paths, bleeds on
+one-way bulls) confirms it is ETH-regime-path-specific, not a generalizable edge.
+Step 1's hypothesis ("the edge is regime-structural and likely asset-agnostic")
+is **falsified**: pivoting asset did not produce a universal edge, and the one
+asset that looked robust does so for a path-specific reason the other two refute.
+
+Delivered: `scripts/regime_wf.py` generalized to multi-symbol (BTC/ETH/SOL);
+`reports/binance_ETHUSDT_15m.csv`, `reports/binance_SOLUSDT_15m.csv`,
+`reports/binance_ETHUSDT_funding.csv`, `reports/binance_SOLUSDT_funding.csv`;
+`reports/regime_wf_multi.log`. ETH supertrend 1d L/S kept as a watchlist
+single-asset candidate (not deployed; bar = cross-asset replication, which it
+fails). Next plan steps: (2) cross-exchange basis / funding carry with real
+dynamic funding + band-gated re-hedge; (3) order-flow / microstructure if the
+CoinDCX WS feed is back up; (4) external regime prior walk-forwarded.
+
+## §20. Band-gated funding carry with real dynamic funding (step 2) — first net-positive-after-costs result, but funding-regime-dependent
+
+> Step 2: re-test delta-neutral funding carry with the REAL `funding_rates`
+> history (now on disk for BTC/ETH/SOL) and a **band-gated re-hedge** (only
+> re-hedge when funding crosses a band, not every sign change) to cut flip cost.
+> §12 refuted NAIVE sign-flip carry: 336 flips/2828 events, flip cost 26.9%
+> (maker) > gross funding 24.2%. The noise-driven flips earned ~0 funding but
+> paid full fees. `scripts/funding_carry_band.py`.
+
+### 20.1 Band-gated re-hedge fixes the flip-cost problem
+
+Deadband hysteresis: be SHORT (perp) when rate > +b, LONG when rate < −b, HOLD
+current side while −b ≤ rate ≤ b. Skips near-zero flips; pays small adverse
+funding in the deadband instead of 4 fills to flip. Swept b, real signed
+funding, lev 1, maker fee 0.0002/fill (4 fills/flip), 70/30 split:
+
+| asset | band | flips(full/OOS) | net full | net OOS | sh OOS |
+|---|---|---|---:|---:|---:|
+| BTC | 0 (naive §12) | 541/205 | -13.0% | -10.0% | -9.39 |
+| BTC | 0.0002 | **1/1** | +29.7% | +4.0% | 23.79 |
+| ETH | 0 (naive) | 569/255 | -13.7% | -13.6% | -12.01 |
+| ETH | 0.0005 | 2/2 | +30.6% | +3.1% | 16.03 |
+| SOL | 0 (naive) | 878/339 | -24.1% | -16.6% | -12.73 |
+| SOL | 0.0002 | 11/2 | +30.6% | +3.5% | 6.86 |
+
+The band cuts flips from hundreds to single digits → flip cost collapses below
+gross funding. Naive is deeply sub-fee; banded nets positive. **But** 1 flip on
+BTC = "hold short the whole window, collect net-positive funding" = a
+funding-DIRECTION bet (this works only because funding was net-positive 2023-26).
+
+### 20.2 CoinDCX-executability: the spot-short problem + TDS on the hedge leg
+
+Delta-neutral carry = (perp leg) + (spot hedge). Two sides:
+- **Positive funding** (rate>0): short perp (receive) + **long spot** →
+  executable on CoinDCX (short perp available, long spot available).
+- **Negative funding** (rate<0): long perp (receive) + **short spot** →
+  **NOT executable** — CoinDCX spot has no shorting.
+
+So the theoretical two-sided band carry (harvests both signs) is NOT realizable;
+only the **one-sided** harvest (positive funding only, FLATTEN when funding
+negative) is. Plus the spot hedge leg: each **flatten = SELL spot = 1% TDS**
+(the dominant cost, far bigger than the 0.08% perp flip fee — this is what truly
+killed naive: 336 flattens × 1% TDS = catastrophic). The band's value on CoinDCX
+is doubly large: it kills flips AND TDS-bearing spot sells.
+
+### 20.3 Executable one-sided carry, WITH 1% TDS on spot sells, K=4 walk-forward
+
+Train-selected band (no OOS peeking). Real funding, lev 1, maker perp fee + 1%
+TDS per flatten. `reports/funding_carry_band.log`:
+
+| asset | band | f1 up | f2 up | f3 up | f4 dn | full | ~%/yr | flattens |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| BTC | 0.0002 | +5.8 | +10.9 | +5.9 | 0.0 | +29.4% | 7.5 | 0 |
+| ETH | 0.0003 | +6.0 | +11.9 | +6.0 | 0.0 | +28.2% | 7.2 | 1 |
+| SOL | 0.0002 | +0.3 | +13.8 | +1.5 | 0.0 | +16.0% | 4.2 | 5 |
+
+Positive in **3/4 folds** (the three up folds), **FLAT (0, no bleed) in the
+downtrend fold4**. Never negative in any fold. BTC never flattened at all
+(funding min −0.00015, never below the −0.0002 band → held short perp + long
+spot the whole 2.5yr → 0 TDS). SOL bore one −0.927% funding spike (min rate
+−0.00927) and still netted +16%.
+
+### 20.4 Verdict — net-positive but NOT a robust edge
+
+This is the **first net-positive-after-all-real-costs result** in the research:
+~7%/yr on BTC/ETH, ~4%/yr on SOL, after perp fees AND 1% TDS on hedge rebalances.
+It does not bleed in any fold (worst = 0, flat in the downtrend). Distinct from
+every prior strategy that bled in the downtrend.
+
+**But it is NOT a robust regime-agnostic edge** (the project bar):
+1. **Funding-regime-dependent.** It profits in **positive-funding** regimes
+   (bulls, where longs pay to hold) and goes flat in negative-funding regimes.
+   Fold4 (dn) = 0, not positive → fails "profit across BOTH regime types."
+   The ~7%/yr is **bull-funding-regime income**, structurally analogous to the
+   bull-beta price trap: it harvests the carry leveraged longs pay in a bull,
+   and sits out bears. It is "be the funding counterparty in a bull," not alpha.
+2. **Band-overfit + small-funding miss.** Fold4 funding was small-positive
+   (mean +0.000034) but below the band → missed entirely (flat). A narrower
+   band captures it but the extra flips/TDS cost more than the income. The
+   train-selected wide band is fit to the big-funding folds 1-3.
+3. **Unmodeled tail risk (the real reason not to deploy yet):**
+   - **Basis / short-squeeze.** Delta-neutral assumes perp ≈ spot. In a short
+     squeeze (funding>0 bull → longs bid perp to a premium), the short-perp leg
+     loses notional faster than the spot leg hedges → margin call / liquidation
+     on the perp alone before the spot leg can cover. The perp basis can blow
+     out 1-5% in a day in violent moves — one basis spike exceeds a year's
+     funding income. §12's "<0.1% basis" is the calm-time figure, not the
+     tail. NOT modeled here.
+   - **Venue funding ≠ Binance.** We used Binance funding as a proxy; CoinDCX
+     INR-margin perp funding schedule/rate differs and must be verified from
+     CoinDCX's own marks before any deployment.
+   - **Capital efficiency.** Lev-1 perp margin + full spot notional ≈ 2×
+     capital → ~7%/yr on perp notional ≈ ~3.5%/yr on total capital at lev 1;
+     leverage scales the perp side but the spot leg stays unlevered and the
+     short-squeeze margin requirement caps practical leverage low.
+
+**Status:** kept as a **watchlist candidate**, the closest thing to an edge
+found, but NOT deployed. Bar to deploy: (a) model basis/short-squeeze tail risk
+on real perp-spot basis data (the dominant unmodeled risk); (b) verify CoinDCX's
+actual funding (not Binance proxy); (c) confirm it survives a sustained
+negative-funding regime not just by going flat (opportunity cost) — i.e. is
+~7%/yr in bull-funding regimes worth the tail risk? Per step-2 instruction
+("if still sub-fee, document and stop") — it is NO LONGER sub-fee (the band
+fixed that), so it is documented as a live candidate rather than closed.
+
+Delivered: `scripts/funding_carry_band.py`; `reports/funding_carry_band.log`;
+reused `scripts/funding_carry.py` (align/load_price/metrics). Next: step 3
+(order-flow / microstructure if CoinDCX WS feed is back up) and step 4
+(external regime prior walk-forwarded).
+
+## §21. Microstructure feed unblocked (step 3) — was a code bug, not infra; real-side CVD now possible
+
+> §15 marked the CoinDCX WS feed "503 / handshake timeouts" and left the
+> microstructure collector (Lee-Ready tick-rule CVD PROXY) feed-blocked. Step 3:
+> retry the feed; if up, record ticks ≥1 week, then forward-test CVD.
+
+### 21.1 The 503 was a CODE BUG, not infrastructure
+
+The host is UP (`https://stream.coindcx.com` returns 200 "Welcome to Coindcx
+Streams!"). CoinDCX streams are **Socket.IO v2.4.0 (Engine.IO v3)**, not raw
+WebSocket. §15's `microstructure.py` did a raw `websockets.connect(ws_url)` to
+the bare host — a Socket.IO server returns **HTTP 503** for a request that is
+not an Engine.IO handshake on the `/socket.io/?EIO=3&transport=websocket` path.
+The "infra issue" was connecting to the wrong path with the wrong protocol.
+
+Fix (hand-rolled EIO=3 over the already-installed `websockets` lib — no new dep):
+connect to `/socket.io/?EIO=3&transport=websocket`, recv the `0{sid,...}` Engine.IO
+open, recv the server's SPONTANEOUS `40` (Socket.IO connect — do NOT send our own
+`40`; a duplicate connect makes the server drop us on join), emit
+`42["join",{"channelName":"B-BTC_USDT"}]`, then handle server pings (`2`→`3`) and
+client keepalive (`2` every ~20s). Confirmed live: a probe streamed real frames.
+
+### 21.2 REAL trade-side CVD (not the §15 proxy)
+
+The `B-BTC_USDT` channel emits `new-trade` events with the FULL Binance-style
+trade print — confirmed from a live probe:
+
+    42["new-trade",{"event":"new-trade","data":"{\"T\":1786131422620,
+        \"p\":\"65009.88000000\",\"q\":\"0.00011000\",\"s\":\"BTCUSDT\",
+        \"m\":false,\"channel\":\"B-BTC_USDT\",\"type\":\"new-trade\"}"}]
+
+`m` (isBuyerMaker) gives the TRUE aggressor side: `m=false` → buyer is taker →
+BUY; `m=true` → seller is taker → SELL. So CVD = Σ(+q buy, −q sell) from real
+order flow — **not** the §15 Lee-Ready price proxy (which inferred side from
+upticks/downticks because trade-side data was believed unavailable). This is the
+materially better signal source §15 wanted: real trade prints + size + side, plus
+`depth-update`/`depth-snapshot` orderbook if needed later.
+
+### 21.3 Recorder built; proven; currently IP-throttled from probing
+
+`scripts/microstructure.py` rewritten as the recorder: EIO=3 handshake, real-side
+CVD, appends every trade (ts_ms, price, qty, side, symbol) to
+`reports/ticks_B_BTC_USDT.csv` (gitignored), prints rolling CVD/imbalance, and
+**reconnects on drop** (the server drops connections intermittently — clean 1005,
+~per-IP limits/restarts; a multi-day recorder must rejoin and continue). Run with
+no `RUN_S` arg = record until Ctrl-C.
+
+A live probe captured real trades and confirmed the parse. A longer in-session
+sample could NOT be captured: after ~20 diagnostic connections the server began
+**consistently closing** each connection at the first data-recv (the join itself
+succeeds) — an IP rate-limit / throttle from the probing burst, not a code defect
+(the protocol is proven). Recording must be run later, not during a probe burst.
+
+**Status: feed UNBLOCKED, recorder correct + proven, real-side CVD available.**
+Next action (cannot finish in-session): run
+`python scripts/microstructure.py B-BTC_USDT` for **≥1 week** (no RUN_S, leaves it
+recording; the reconnect loop handles drops) to accumulate a tick sample, then
+forward-test CVD as a short-horizon directional signal. This is the one remaining
+edge class with a structurally different information source (order flow, not
+price-derived indicators) and it is now actually testable. A `@prices-futures`
+(perp mark) or futures-instrument channel can be added to record the PERP feed if
+the spot `B-BTC_USDT` trades prove to be spot rather than perp (the prints carry
+`"s":"BTCUSDT"` with no mark/funding field, suggesting spot; verify the exact
+instrument code against the Markets Details API when recording the perp).
+
+## §22. External regime prior, walk-forwarded (step 4) — VIX best, still regime-contaminated
+
+> §13 tested DXY / US10Y with a 70/30 split; every signal FLIPPED SIGN between
+> train and OOS = regime luck. Step 4: a different external series AND the
+> regime-balanced K=4 walk-forward (the fix §13 called for). `scripts/macro_wf.py`.
+
+Tested EQUITY risk-appetite priors §13 did NOT try: VIX (VIXCLS) and S&P500
+(SP500) from FRED — free, daily, genuinely external to crypto, 2023-01→2026-07
+(890 daily rows). Reused `fred()`/`metrics()` from `scripts/macro_signal.py`.
+K=4 contiguous folds, fixed signal rules, each fold scored, tagged by BTC
+buy&hold regime. Robust = positive net in >half folds AND across both regimes.
+
+| signal | f1 up | f2 up | f3 up | f4 dn | agg | pos | verdict |
+|---|---:|---:|---:|---:|---:|---|---|
+| vix_below_ma50 | -53.6 | +6.9 | +3.2 | +5.1 | -38.3 | 3/4 | "robust"-count but NEG agg |
+| vix_mom5 | -45.9 | +0.5 | +22.3 | +30.5 | +7.4 | 3/4 | "robust"-count, flat agg |
+| vix_inv_level | -2.0 | +92.3 | +10.9 | -28.4 | +72.8 | 2/4 | bull-beta |
+| sp_mom5 | -28.4 | +39.6 | -29.5 | -19.7 | -38.1 | 1/4 | lose |
+| sp_mom20 | -33.7 | +137.8 | +28.9 | -58.0 | +75.1 | 2/4 | bull-beta |
+| dxy_mom5 (§13) | +22.5 | +176.1 | -28.3 | -24.2 | +146.1 | 2/4 | bull-beta |
+
+**VIX is the most informative external prior found** — the one thing DXY/US10Y
+lacked: it profits in the **downtrend fold** via rising volatility (vix_mom5 f4
++30.5, sh 1.09; vix_below_ma50 f4 +5.1) — going short as vol spikes in the bear.
+That is genuine, walk-forwarded downtrend protection the dollar/rate priors never
+showed. **But it is contaminated by trad-fi vol events**: fold1 (2023 BTC +122%
+bull) bled −45.9/−53.6 because VIX SPIKED in 2023 from the SVB / banking crisis
+(a trad-fi event, not a crypto bear) → the VIX signal shorted into the crypto
+bull. So VIX's crypto-regime signal is confused by equity-vol shocks that did not
+correspond to crypto regimes. Net aggregate is flat-to-negative (vix_mom5 +7.4 ≈
+~2%/yr with a −45.9% fold drawdown; vix_below_ma50 −38.3).
+
+The crude pos-count rubric flags vix_mom5/vix_below_ma50 "ROBUST" (3/4 folds, dn
+fold positive), but the **aggregate is flat/negative and the fold1 drawdown is
+~50%** — that is not an edge; the pos-count rubric is too lenient (a strategy
++0.5/+0.5/+0.5/−45 is "3/4 positive" but garbage). SP500 momentum is bull-beta
+(profits in bull folds, −58 in the dn fold). DXY (§13) re-confirms bull-beta here.
+
+**No robust macro edge.** VIX is the best external prior (real downtrend signal via
+vol, the structural idea §13 missed) but its crypto signal is contaminated by
+equity-vol shocks → net flat. Consistent with §13's regime-luck conclusion, now
+shown via the walk-forward + a genuinely-external series. Stablecoin-supply /
+exchange-flow (the prompt's examples) were not reachable free (DeFi Llama
+stablecoin endpoints 404; on-chain flows are paid CryptoQuant/Glassnode) — VIX/
+SP500 were the accessible free external series. Step 4 closes the macro-prior
+direction: no deployable external-regime prior at retail/free-data resolution.
