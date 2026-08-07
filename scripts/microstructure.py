@@ -49,17 +49,12 @@ def sio_url() -> str:
 
 def parse_sio(raw: str):
     """Decode a Socket.IO v2 (EIO=3) frame. Returns (event, payload) or None.
-    42[event, payload] -> the event tuple. Handles 0 open / 2 ping / 40 connect."""
+    42[event, payload] -> the event tuple; 40 -> connect ack. Bare '2'/'3' ping/
+    pong are handled by the caller (raw == '2'), so we only parse '4'-prefixed
+    frames here. Check the 2-char prefixes FIRST: a '42' event has raw[1]=='2',
+    so a `if sub=='2'` check would misclassify every event as a ping (and the
+    caller would then send a spurious '3' pong per event -> server closes 1005)."""
     if not raw or raw[0] != "4":
-        return None
-    sub = raw[1]
-    if sub == "0":       # Engine.IO OPEN handled by caller; ignore here
-        return None
-    if sub == "2":       # server ping
-        return ("__ping__", None)
-    if sub == "1" or sub == "3":
-        return None
-    if sub == "2" or sub == "3":
         return None
     if raw[:2] == "40":  # connect ack
         return ("__connect__", None)
@@ -69,7 +64,7 @@ def parse_sio(raw: str):
             return (arr[0], arr[1] if len(arr) > 1 else None)
         except (json.JSONDecodeError, IndexError):
             return None
-    return None
+    return None  # 41 disconnect / 44 error / other control: ignore
 
 
 def parse_trade(payload) -> dict | None:
