@@ -39,6 +39,9 @@ EP = {
     "trades": "/exchange/v1/derivatives/futures/trades",
     # Public spot ticker (api.coindcx.com, no auth). USDTINR last_price = USDT/INR FX.
     "ticker": "/exchange/ticker",
+    # Spot order (api.coindcx.com, signed). BTCINR spot leg for the carry hedge.
+    # ponytail: path from docs.coindcx.com (2026-07); re-check before live money.
+    "spot_create_order": "/exchange/v1/orders/create",
 }
 
 # resolution map: our timeframe -> coindcx candle resolution string
@@ -160,6 +163,30 @@ class CoinDCXClient:
         headers, payload = self._sign(body)
         async with self._rate_lock:
             r = await self._priv.post(EP["create_order"], content=payload, headers=headers)
+        return self._handle(r)
+
+    async def create_spot_order(
+        self, *, side: str, pair: str, order_type: str, quantity: float,
+        price: float | None = None,
+    ) -> dict[str, Any]:
+        """Spot order (BTCINR hedge leg). Signed POST to the spot create endpoint.
+        No leverage/margin fields (spot). Mirrors create_order's signing pattern:
+        body = {"timestamp": ms, "order": {...}} -> _sign -> _priv.post.
+        """
+        if side not in ("buy", "sell"):
+            raise ValueError(f"bad side {side}")
+        if order_type not in ("market_order", "limit_order"):
+            raise ValueError(f"bad spot order_type {order_type}")
+        if quantity <= 0:
+            raise ValueError("quantity must be > 0")
+        order = {"side": side, "pair": pair, "order_type": order_type,
+                 "total_quantity": quantity}
+        if price is not None:
+            order["price"] = price
+        body = {"timestamp": int(time.time() * 1000), "order": order}
+        headers, payload = self._sign(body)
+        async with self._rate_lock:
+            r = await self._priv.post(EP["spot_create_order"], content=payload, headers=headers)
         return self._handle(r)
 
     async def cancel_order(self, order_id: str) -> Any:
