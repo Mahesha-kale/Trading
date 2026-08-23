@@ -1723,3 +1723,68 @@ the one live test still pending. New scripts: `coindcx_venue.py`,
 `coindcx_venue_recorder.py`, `obi_forward.py`, `volume_profile.py`;
 `microstructure.py` extended (depth). Logs: `reports/coindcx_venue.log`,
 `reports/volume_profile_btc.log`.
+
+## §30. Hybrid carry deploy built (sub-project 1) — paper-trader + components; 4-phase gated, NOT deployed
+
+> §28 closed the research (no robust retail perp edge at free-data resolution).
+> §29 hardened the carry's deploy bar (venue-verify made it HARDER, not easier;
+> OBI still accruing). This section logs that the **engineering** sub-project —
+> building the deployable paper-trader for the one watchlist candidate (the
+> §20/§24 band-gated carry, basis-stop de-risked) — is now BUILT. It is paper-
+> gated, not live. Spec: `docs/superpowers/specs/2026-08-24-hybrid-carry-deploy-design.md`;
+> plan: `docs/superpowers/plans/2026-08-24-hybrid-carry-deploy.md`.
+
+### 30.1 What was built (Tasks 1-7)
+
+| component | file | role |
+|---|---|---|
+| risk budget | `scripts/risk_budget.py` | pure sizing: `position_size(capital, stop_fill_est, risk_fraction, leverage_cap)`, `tilt_size(capital, conviction, risk_fraction, leverage_cap)` (≤20% of perp notional naked), `max_dd_halt(equity, peak, max_dd)`. stdlib `assert` self-check. |
+| spot order | `app/exchange/coindcx.py` `create_spot_order(side, pair, order_type, quantity, price=None)` | signs body + `self._priv.post` directly (mirrors `create_order`); endpoint `/exchange/v1/orders/create` flagged `# ponytail: unverified vs live docs` — Phase 0/1 paper + Phase 2 signing dry-run resolve; **no live orders until Phase 2**. |
+| carry trader | `scripts/carry_trader.py` | the async live loop: `decide(rate_history, band, side)` signal; `run_loop(cfg, client, feed, live)`; fault handling (feed outage 2×poll_s halt, basis-stop > cfg `basis_stop_bps`, DD-stop via `max_dd_halt`, orphan-leg guard perp-first→spot with reject→exit perp+halt, HALT-file kill-switch); `reconcile(st, client, pair)` against exchange truth; state persisted `reports/carry_trader_state.json`. |
+| tilt slot | `scripts/carry_trader.py` `TiltSignal` / `NoTilt` | pluggable interface (Phase 3); `NoTilt` stub returns conviction 0.0 — ON only when sub-project 2 (regime-gate) + sub-project 3 (asymmetric risk overlay) land. |
+| signing test | `tests/test_exchange.py` | pytest: real hmac over captured content + `X-AUTH-APIKEY`. |
+
+`run_loop` argparse: `--live` / `--band` / `--capital` / `--pair` / `--spot-pair` /
+`--leverage`. `--live` is refused unless `settings.trading_mode == "live"`. The
+`_live_feed` reads `reports/coindcx_venue.csv` (the Phase 0 venue-verify output)
+— so the paper loop cannot even start against a stale venue truth.
+
+### 30.2 Four-phase gating status (NOT DEPLOYED — paper-gated)
+
+| phase | gate | status |
+|---|---|---|
+| 0 venue-verify | CoinDCX INR-margin perp + spot-leg venue truth (§29.1) | **ACCRUING** — recorder on Oracle Cloud box, needs weeks; no deploy. |
+| 1 paper-trader | `scripts/carry_trader.py` paper mode | **READY** to run once the Phase 0 venue-gate passes (venue csv non-empty + clean). Paper IS the integration test. |
+| 2 small real | `--live` + small capital | gated behind ≥1 week of clean Phase 1 paper; signing dry-run first. |
+| 3 tilt ON | `TiltSignal` non-stub | gated behind sub-project 2 (regime-gate research) + sub-project 3 (asymmetric risk overlay). `NoTilt` returns 0.0 until then. |
+
+### 30.3 Fail-safe contract
+
+Every fault path → flatten + halt: feed outage (2× poll_s with no tick), restart
+(`reconcile` on startup vs exchange truth — adopts exchange size/side or halts on
+mismatch, never guesses), orphan leg (perp-first→spot; on spot reject → exit perp
++ halt), unknown/corrupt state (halt, do not trade), HALT file
+(`reports/carry_trader.HALT` → flatten all + halt). Isolated margin. Perp
+INR-margin futures carry **no 1% TDS** (TDS is spot-sell only — confirmed in §20/§27);
+the spot leg's sell pays it. `ponytail:` markers flag the known simplifications
+with ceilings and upgrade paths (global rate lock, `_mark_equity` placeholder,
+unverified endpoint path).
+
+### 30.4 What this is NOT
+
+This is engineering, not a new edge. §27's verdict (carry is funding-regime-
+dependent, bleeds small in negative funding, NOT a robust regime-agnostic edge)
+stands — this sub-project does not reopen it. The carry remains the single
+watchlist candidate (bounded-tail via §24 basis-stop, execution/venue-dependent),
+now with a real paper-trader to surface venue/execution risk the backtest cannot
+see (slippage, funding-timing, orphan-leg paths, venue-lag). The tilt slot is the
+hook for sub-project 2's regime-gate signal and sub-project 3's asymmetric risk
+overlay — both separate specs, neither built. Deployment decisions remain gated
+behind Phase 0 (venue truth) + Phase 1 (clean paper ≥1 week) + §27 (no robust
+edge — size accordingly).
+
+Delivered: `scripts/risk_budget.py`, `scripts/carry_trader.py`,
+`tests/test_exchange.py`, `app/exchange/coindcx.py` (`create_spot_order`).
+State: `reports/carry_trader_state.json`. Kill-switch: `reports/carry_trader.HALT`.
+See [[funding-carry-band]] (§20), [[carry-basis-stop]] (§24),
+[[carry-funding-regime-walkforward]] (§27), [[post-conclusion-followups]] (§29).

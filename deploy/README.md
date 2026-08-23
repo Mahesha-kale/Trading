@@ -32,3 +32,12 @@ recorder's continuous websocket traffic keeps net active, but verify the box
 is alive each session. If reclaimed: reprovision, re-run setup, re-point at the
 new public IP. The accrued ticks are on the box disk — lost on reclamation;
 periodically scp down (`scp ubuntu@<ip>:~/Trading/reports/ticks_*.csv reports/`).
+
+## Carry trader
+
+`scripts/carry_trader.py` — the hybrid carry paper/live loop (§30). Paper mode:
+`python scripts/carry_trader.py`; live adds `--live`, refused unless
+`settings.trading_mode == "live"` (Phase 2, gated behind clean Phase 1 paper).
+Kill-switch: `reports/carry_trader.HALT` → flatten all + halt. State:
+`reports/carry_trader_state.json` (persisted, reconciled against exchange on
+restart). NOT deployed — paper-gated on the Phase 0 venue-verify recorder above.
