@@ -135,8 +135,26 @@ async def _enter_short(st, s, client, live, cfg):
 async def _flatten_all(st, client, live, cfg):
     if st.side == 0: return
     if live and client is not None and st.qty > 0:
-        await client.exit_position(st)  # adjust to real exit API in Task 6
-        await client.create_spot_order(side="sell", pair=cfg["spot_pair"],order_type="market_order", quantity=st.qty)
+        # Real CoinDCXClient.get_positions() returns normalized dicts with
+        # id/position_size/side/pair. exit_position takes a position_id STRING.
+        # ponytail: if no open position found, log + skip (don't crash) — exchange
+        # may have already flattened via manual intervention or stop-loss.
+        try:
+            poss = await client.get_positions(pair=cfg["pair"])
+        except Exception as e:  # noqa: BLE001 - fault boundary: flatten best-effort
+            log.error("flatten: get_positions failed -> skip perp exit: %s", e)
+            poss = []
+        open_pos = [p for p in poss if abs(float(p.get("position_size", 0) or 0)) > 0]
+        if not open_pos:
+            log.warning("flatten: no open position for %s -> skip perp exit", cfg["pair"])
+        else:
+            pos_id = open_pos[0].get("id")
+            if pos_id:
+                await client.exit_position(pos_id)
+            else:
+                log.warning("flatten: open position has no id -> skip perp exit")
+        await client.create_spot_order(side="sell", pair=cfg["spot_pair"],
+                                        order_type="market_order", quantity=st.qty)
     st.side = 0; log.info("FLATTEN qty=%s", st.qty); st.qty = 0.0
 
 
@@ -173,6 +191,8 @@ async def reconcile(st: TraderState, client) -> None:
 
 
 def demo() -> None:
+    import asyncio
+
     import numpy as np
     # side 0 (flat), rate > band -> ENTER_SHORT
     assert decide(np.array([0.0003]), band=0.0002, side=0) == "ENTER_SHORT"
@@ -183,9 +203,18 @@ def demo() -> None:
     # holding short, rate in deadband -> HOLD
     assert decide(np.array([0.0001]), band=0.0002, side=-1) == "HOLD"
     print("carry_trader signal OK")
-    import asyncio
     asyncio.run(_demo_faults())
     asyncio.run(_demo_reconcile())
+    asyncio.run(_demo_sign())
+
+
+async def _demo_sign():
+    # regression guard on build_order: perp body has the side/leverage we asked for.
+    from app.exchange.coindcx import build_order
+    perp = build_order(side="sell", pair="B-BTC_USDT", order_type="market_order",
+                       quantity=0.01, leverage=3)
+    assert perp["side"] == "sell" and perp["leverage"] == 3, perp
+    print("carry_trader sign OK")
 
 
 async def _demo_faults():
@@ -222,5 +251,57 @@ async def _demo_reconcile():
     print("carry_trader reconcile OK")
 
 
+async def _paper_feed():
+    await asyncio.sleep(0)  # Task 7 / deploy wires real paper feed
+
+
+async def _live_feed():
+    # read latest row from reports/coindcx_venue.csv (recorder writes it) -> FeedSample
+    import csv
+    p = REPORTS / "coindcx_venue.csv"
+    if not p.exists():
+        return None
+    rows = list(csv.DictReader(p.read_text().splitlines()))
+    if not rows:
+        return None
+    r = rows[-1]
+    return FeedSample(ts=int(float(r["ts"])), fr=float(r["fr"]), efr=float(r["efr"]),
+                      basis_bps=float(r["basis_bps"]), spot_price=float(r["spot_inr"]),
+                      usdtinr=float(r["usdtinr"]))
+
+
+def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--live", action="store_true")
+    ap.add_argument("--band", type=float, default=0.0002)
+    ap.add_argument("--capital", type=float, default=100_000.0)
+    ap.add_argument("--pair", default="B-BTC_USDT")
+    ap.add_argument("--spot-pair", default="BTCINR")
+    ap.add_argument("--leverage", type=int, default=3)
+    args = ap.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    cfg = {"band": args.band, "capital": args.capital, "stop_fill_est": 0.02,
+           "risk_fraction": 0.05, "leverage_cap": args.leverage, "max_dd": 0.25,
+           "basis_stop_bps": 100.0, "pair": args.pair, "spot_pair": args.spot_pair,
+           "poll_s": 60}
+    client = None
+    feed_fn = None
+    if args.live:
+        from app.config import settings
+        if not settings.live:
+            print("Refusing --live: trading_mode != 'live' in .env"); return
+        from app.exchange.coindcx import CoinDCXClient
+        client = CoinDCXClient()
+        feed_fn = _live_feed
+    else:
+        feed_fn = _paper_feed
+    asyncio.run(run_loop(cfg, client=client, feed=feed_fn, live=args.live))
+
+
 if __name__ == "__main__":
-    demo()
+    import sys
+    if len(sys.argv) > 1:
+        main()  # CLI: --live / --band / --capital / --pair / --spot-pair / --leverage
+    else:
+        demo()
