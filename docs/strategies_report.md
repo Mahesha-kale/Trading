@@ -1301,3 +1301,160 @@ carry remains a low-return, left-tail-(now-bounded), venue-and-execution-depende
 strategy. The honest stopping blocker moved from "unmodeled tail" to "execution in
 a squeeze + venue basis + low return for the complexity." No robust edge; the
 engineering de-risked the tail without changing the risk/reward enough to deploy.
+
+## §25. CVD forward-test on accrued CoinDCX ticks (step 3 analysis) — hit% <50% on every pair/config, no short-horizon order-flow edge
+
+> §21 unblocked the CoinDCX Socket.IO feed (the 1005-drop was a code bug, not
+> infra) and deployed recorders on Oracle Cloud. The open question was whether
+> REAL trade-side CVD (aggressor side from `m`=isBuyerMaker) predicts short-horizon
+> direction — the one structurally-different info source not yet tested. It is NOT
+> backtestable from history (no tick archive), so it had to accrue live. The
+> recorders ran 16 days (2026-08-07 → 2026-08-23); `scripts/cvd_forward.py` runs on
+> the accrued sample. Verdict gate (per the plan): hit% materially >50% AND net_eq>1
+> over a ≥1-week sample → justify a proper walk-forward; else CVD has no
+> short-horizon edge.
+
+### 25.1 Sample
+scp'd the three growing tick CSVs off the box to `reports/ticks_B_*.csv` (gitignored
+— the sample): BTC 10.39M ticks / 433MB, ETH 9.91M / 397MB, SOL 2.23M / 83MB. Each
+spans the full 16 days (~379h). Recorders were alive the whole time
+(`systemctl is-active recorder-{btc,eth,sol}` = active, active, active). This is
+~2.3× the ≥1-week gate.
+
+### 25.2 Results — every config below 50% hit rate
+
+`cvd_forward.py` resamples ticks→time bars, takes the rolling-CVD sign as the
+signal, scores hit rate (sign matches next-horizon return) + bare equity (no cost)
++ net equity (minus round-trip flip cost). The grid spans bar_s 1/5/15s, horizon
+1-30 bars, lookback 20-200.
+
+| pair | span | best hit% (bar/hz/lb) | net_eq (best) | gate |
+|---|---|---|---|---|
+| BTC | 379.6h | 48.4% (15s/30/200) | 0.07 | **FAIL** |
+| ETH | 379.4h | 48.8% (15s/15 or 30) | 3.00 @ 15s/30 (hit 48.8%) | **FAIL** (hit<50) |
+| SOL | 379.4h | 47.5% (15s/30/200) | 1.60 @ 15s/30 (hit 47.5%) | **FAIL** (hit<50) |
+
+**hit% is BELOW 50% on every config, every pair**, and *worse* at short horizons
+(1s bars: 27-33%), recovering toward 50% (= pure noise) as horizon/bar grows. This
+is the signature of order flow already being in the price: by the time a rolling
+CVD tilts positive the move has already happened, and the next bar short-horizon
+reverts.
+
+### 25.3 The bare_eq>1 at 1-5s is a momentum artifact, not an edge
+
+`bare_eq` is huge at 1-5s (BTC 604x, ETH 41x, SOL 57x) — alarming until you read it
+with hit%: rolling-CVD sign ≈ recent tick direction (buys push price up, sells down
+by construction), so `signal*fwd_ret` at 1-5s captures the tail of an *in-progress*
+move. But hit%<50% means the signal is directionally **wrong** more than half the
+time; the equity gain is magnitude asymmetry on the few trending bars, not
+directional accuracy. It is not tradable: flip cost (49k flips at 1s on BTC) wipes
+it → `net_eq`→0. At the longest config (15s bars, 30-bar ≈ 7.5min hold) flips drop to
+~1.2k and net_eq edges >1 on ETH/SOL, but hit% is still <50% there — the gain is one
+trending sample's magnitude, not a repeatable directional edge, and the 16-day
+window is a single regime with no walk-forward.
+
+### 25.4 The below-50% hit hints at a fade — but not tradably
+A follow-CVD hit% of 48% implies a *fade* (invert the sign) would score ~52%. That is
+NOT "materially >50%", is net-thin after flip cost, and is over a single 16-day
+regime. Noted honestly as a microstructure-reversal hint; not pursued as an edge and
+not meeting the gate.
+
+### 25.5 Verdict
+**CVD has no short-horizon directional edge.** The last structurally-different info
+source (real trade-side order flow, not price-derived) closes negative, consistent
+with every other thread (grid, ensemble, trend, carry, macro). The §21 feed unblock
+was real engineering progress that made this test possible; the test result is that
+CVD carries no short-horizon alpha on these perps. The recorders can keep running
+for a longer sample / a future volume-profile test, but no CVD edge is established.
+
+Delivered: `scripts/cvd_forward.py` (run on the accrued sample); tick sample cached
+locally (`reports/ticks_B_*.csv`); `reports/cvd_forward.log`.
+
+## §26. Taker-buy-ratio order-flow walk-forward (step 1, default direction) — no robust edge; the bar-level order-flow proxy is bull-beta, whipsaw, or inert
+
+> The handoff's default direction. Binance perp klines carry `taker_buy_volume`
+> (base-asset volume from buyer-TAKER trades); `pull_binance.py` had been dropping
+> it. Re-pulled BTC/ETH/SOL 15m keeping the column, built a taker-buy-ratio signal
+> (`taker_buy_base/volume`, bar-level order-flow imbalance ∈ [0,1], 0.5 = balanced),
+> and ran it through the SAME regime-balanced K=4 walk-forward as §18/§19 (fixed
+> params, no per-fold/per-asset tuning, real per-8h funding, lev 3, maker_on_limit,
+> no TDS). This tests the order-flow class on the multi-year window without waiting
+> for tick accrual (§25 is the tick-level test; this is the bar-level proxy).
+
+### 26.1 Plumbing (additive, reuses the harness)
+- `scripts/pull_binance.py`: keeps `taker_buy_volume`/`taker_buy_quote_volume`
+  (renamed to `taker_buy_base`/`taker_buy_quote` for downstream). Also fixed the
+  headerless-spot `COLS` fallback names. Cached CSVs refreshed for BTC/ETH/SOL.
+- `app/strategy/taker_ratio.py`: new strategy. Smooths the ratio, then a persistent
+  direction with **deadband hysteresis** (state=+1 while smoothed > 0.5+edge, -1
+  while < 0.5-edge, hold in the deadband). `use_short=False` → long-only (sell state
+  = flat). Persistent direction so the engine re-arms after a trailing stop-out.
+  Self-check (`__main__`) verifies warmup/buy/sell/deadband-hold/long-only/missing-cols.
+- `scripts/regime_wf.py`: `resample()` now sums `taker_buy_base` when present; 5
+  taker_ratio candidates added (1h L/S, 1h L, 4h L/S, 4h L gated, 4h L/S edge=0.03).
+
+### 26.2 Per-fold results (K=4, fixed params)
+
+taker_ratio 4h L/S (the only variant with a short side and real trade counts):
+
+| asset | f1 up | f2 up | f3 up | f4 dn | agg | pos | verdict |
+|---|---:|---:|---:|---:|---:|---|---|
+| BTC (+126/+80/+66/-43) | +1163 | -1438 | -1024 | +734 | -565 | 2/4 | whipsaw |
+| ETH (+73/+26/+65/-57)  | -1151 | -486 | +136 | +802 | -698 | 2/4 | whipsaw |
+| SOL (+468/+170/+34/-65) | +1160 | -1040 | -1931 | +744 | -1067 | 2/4 | whipsaw |
+
+Wins in the *extreme* folds (strong-bull f1 and the downtrend f4, where the short
+side catches the bear) and dies in the choppy middle folds (f2/f3) — the ratio flips
+between buy/sell pressure on noise and the L/S gets stopped repeatedly. 2/4 pos but
+**up 1, dn 1** on every asset = whipsaw, not robust (needs pos>2 AND up>0 AND dn>0).
+
+### 26.3 Aggregate across all 5 variants × 3 assets
+
+| variant | BTC | ETH | SOL | shape |
+|---|---:|---:|---:|---|
+| 1h L/S | -6740 (0/4) | -6063 (0/4) | -5383 (0/4) | lose — whipsaw (200-340 trades/fold) |
+| 1h L   | -5068 (0/4) | -6475 (0/4) | -2571 (1/4) | lose — bleeds even in up folds |
+| 4h L/S | -565 (2/4)  | -698 (2/4)  | -1067 (2/4) | whipsaw (wins extremes, loses chop) |
+| 4h L gated | +589 (2/4) | -666 (1/4) | +389 (1/4) | **bull-beta, no cross-asset replication** |
+| 4h L/S e0.03 | 0 (0/4) | 0 (0/4) | 0 (0/4) | inert — deadband too wide (4h ratio ≈ 0.5) |
+
+- **1h variants** churn 130-340 trades/fold and bleed everywhere — the 1h ratio
+  flips on noise; L/S whipsaws, long-only sits out the sell states then re-enters
+  long on noise and gets stopped. Losing even in up folds (ETH 1h L fold2 -1850 in a
+  +26% up fold) = whipsaw, not regime beta.
+- **4h L/S** is calmer (77-97 trades/fold) but still whipsaws: the signal has
+  momentum power in strong-trend folds (BTC f1 +1163, SOL f1 +1160) and the short
+  side catches the downtrend (f4 +734 to +802), but the choppy middle folds shred it.
+  2/4 with up 1 / dn 1 = whipsaw on all three.
+- **4h L gated** is the closest to a signal — BTC +589 (2/4, up 2/dn 0) = bull-beta.
+  But it FAILS cross-asset replication: identical fixed params give ETH -666 (1/4)
+  and SOL +389 (1/4). The one asset that looked best (BTC) does so for a path reason
+  the other two refute — the same falsifier shape as the §19 ETH supertrend 1d L/S
+  outlier.
+- **4h L/S edge=0.03** fired zero trades on every asset: a 0.03 deadband (0.47-0.53)
+  is wider than the 4h ratio ever deviates from 0.5 → the signal never arms. The
+  4h order-flow imbalance is too close to balanced for a threshold signal; edge=0.0
+  (the 4h L/S row) is the operative setting, and it whipsaws.
+
+### 26.4 Verdict — no robust order-flow edge at the bar level
+**Zero robust flags in 15 asset×variant cells.** The taker-buy-ratio signal is
+either whipsaw (1h, 4h L/S), bull-beta that does not replicate cross-asset (4h L
+gated), or inert (deadband too wide). Same regime/path-beta conclusion as every
+prior class: the bar-level order-flow imbalance does not generalize to an edge
+across both bull and bear regimes on BTC/ETH/SOL under real perp costs.
+
+The structural reading: taker-buy-ratio is a *coincident* order-flow measure (it
+measures who is aggressing *right now*), so like the §25 tick-CVD it largely reflects
+the move in progress. As a trend filter it catches strong directional folds and dies
+in chop; as a mean-revert signal it would invert to ~52% hit (not robust either).
+It is not a leading independent info source — consistent with §25's tick-level
+finding (order flow is already in the price). The two order-flow tests (§25 tick
+CVD, §26 bar taker-ratio) agree: no short/medium-horizon order-flow edge on these
+perps.
+
+Delivered: `scripts/pull_binance.py` (keeps taker buy volume), `app/strategy/taker_ratio.py`
+(registered), `scripts/regime_wf.py` (5 taker_ratio candidates); re-pulled kline
+CSVs now carry `taker_buy_base`; `reports/regime_wf_taker.log`. The original 9
+candidates reproduce §18/§19 exactly (incl. the ETH supertrend 1d L/S +1058 ROBUST
+outlier), confirming the harness is unchanged and the taker_ratio cells are on the
+same footing.
