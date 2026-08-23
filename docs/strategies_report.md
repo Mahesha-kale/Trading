@@ -1458,3 +1458,268 @@ CSVs now carry `taker_buy_base`; `reports/regime_wf_taker.log`. The original 9
 candidates reproduce §18/§19 exactly (incl. the ETH supertrend 1d L/S +1058 ROBUST
 outlier), confirming the harness is unchanged and the taker_ratio cells are on the
 same footing.
+
+## §27. Carry funding-regime walk-forward (step 2, the one untested rigor gap) — carry is funding-regime-dependent; it bleeds small (not flat) in negative funding, all income from positive funding; NOT a robust edge
+
+> The one open rigor gap from the handoff. §20 tested carry across PRICE-regime
+> folds (K=4 by time, tagged by buy&hold sign) — but every one of those folds had
+> POSITIVE mean funding (BTC fold4 posFund +3.5%, the "downtrend" fold included),
+> so §20 never isolated a NEGATIVE-funding regime. §20 asserted "funding-regime-
+> dependent, flat in negative funding" without ever scoring a negative-funding
+> regime directly. This splits the window by FUNDING regime (sustained positive
+> vs negative funding via a rolling mean) and scores the executable one-sided
+> carry in each. `scripts/carry_funding_regime.py` (reuses
+> `funding_carry_band.load_funding`/BANDS/FEE + `funding_carry.metrics`).
+
+### 27.1 Design
+Funding regime = sign of the rolling mean of the 8h funding rate over W marks
+(funding is 3/day; W=21 ≈ 1 week — "sustained"). Segmented into contiguous
+positive/negative regime runs. Executable one-sided carry (the deployable
+CoinDCX version, §20.2-20.3): SHORT perp + LONG spot when rate > +band (harvest
+positive funding), FLATTEN when rate < −band, HOLD in the deadband (pay small
+adverse funding). Each flatten = spot SELL (1% TDS, spot-only — confirmed) + perp
+close; each entry = 2 fills. Band train-selected on the first 70% by time (no
+OOS peeking), as §20. Carry net decomposed per-regime as the sum of per-mark
+net over the regime's marks (≈ log-return; per-mark returns are ~0.01% so the
+decomposition is clean and the parts sum to the whole).
+
+Gate (handoff framing): does carry SURVIVE a negative-funding regime, or only
+go flat (opportunity cost)? On CoinDCX (no spot short) flat-in-negative is the
+BEST achievable — the two-sided harvest of negative funding is not executable.
+So the robust-edge bar is: profit in pos-regime AND no-bleed (≥0) in neg-regime.
+
+### 27.2 Results (train-selected band, W=21, robust to W=42/63)
+
+| asset | band | pos marks | pos net% | neg marks | neg net% | flattens | full net% | ~%/yr |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| BTC | 0.0002 | 3557 (91%) | **+26.3** | 361 (9%) | **−0.47** | 0 | +29.5 | 7.5 |
+| ETH | 0.0003 | 3589 (91%) | **+26.1** | 329 (8%) | **−1.17** | 1 | +28.3 | 7.2 |
+| SOL | 0.0005 | 2744 (70%) | **+18.6** | 1174 (30%) | **−2.55** | 2 | +17.4 | 4.6 |
+
+Window-robust (W=21/42/63): neg-regime net stays negative on every asset at every
+window — BTC −0.18 to −0.47, ETH −1.14 to −1.18, SOL −1.84 to −2.55. Pos-regime
+net is stable (+26/+26/+18). Funding is ~91% positive for BTC/ETH (only ~9%
+negative), 70/30 for SOL (SOL is materially more two-sided — that is why §20 SOL
+had 5 flattens to BTC's 0).
+
+### 27.3 Verdict — carry survives by a small bleed, NOT by going flat
+**§20's "flat (0, no bleed) in negative funding" is REFUTED.** In actual
+negative-funding regimes the carry BLEEDS a small amount (BTC −0.47%, ETH
+−1.17%, SOL −2.55% over 2.5yr); it does not go flat. Why: the band holds through
+mild-negative marks (rate between −band and 0, in the deadband) to avoid the
+flip+TDS cost of flattening — so it pays small adverse funding instead of sitting
+out. BTC never flattens at all (its funding min −0.00015 never crosses the
+−0.0002 band), so it holds short through every negative-regime period and pays
+the cumulative adverse funding. ETH/SOL flatten once or twice on the deeper
+negative periods (e.g. ETH 2026-02→03, SOL 2023-09→10) but still net negative in
+the regime.
+
+This bleed is the cost-optimal band's deliberate residual: §20 already showed
+band=0 (flatten on every sign change) is deeply negative (flip+TDS cost >
+adverse funding), so holding through mild negatives IS the cost-minimizing choice.
+The negative-regime bleed is the price of avoiding TDS-bearing flattens — not a
+bug, but it means the carry does NOT cleanly sit out bears; it leaks.
+
+**The carry still survives overall** (net +29.5/+28.3/+17.4%, the neg-regime
+drag is ~2-9% of the pos income), but the robust-edge gate FAILS: the
+negative-funding regime is NEGATIVE, not positive and not flat. The income is
+entirely positive-funding-regime income (~7%/yr BTC/ETH, ~4.6%/yr SOL — being
+the carry counterparty to leveraged longs in positive-funding regimes).
+**NOT a robust regime-agnostic edge** — the same shape as the bull-beta price
+trap, now shown directly across FUNDING regimes (not just price regimes).
+
+This closes the one open rigor gap. §20's "funding-regime-dependent" conclusion
+is confirmed with funding-regime evidence, and refined: neg-regime is a small
+bleed, not flat. The carry remains the **watchlist** candidate (bounded-tail via
+the §24 basis-stop, execution/venue-dependent) — the only non-negative-result in
+the research — but it is NOT a robust OOS edge across both funding regimes, and
+it was never going to be (by construction it harvests positive funding only).
+
+Delivered: `scripts/carry_funding_regime.py`; `reports/carry_funding_regime.log`.
+See [[funding-carry-band]] (§20), [[multi-asset-regime-walkforward]] (§19).
+
+## §28. Final synthesis — no robust retail perp edge at free-data resolution across bull and bear; research concludes
+
+> §27 closes the last open thread (the carry funding-regime rigor gap). Every
+> direction is now closed or parked. This is the concluding synthesis.
+
+### 28.1 The thread ledger
+| § | class | result | shape |
+|---|---|---|---|
+| 1-7,11 | 23 price strategies + ensemble | empty | diversification = in-sample artifact |
+| 18 | real-cost + regime-balanced WF (BTC) | closed | every apparent edge = bull/bear beta |
+| 19 | multi-asset perp regime WF (BTC/ETH/SOL) | closed | 1 ETH outlier = path luck, fails cross-asset |
+| 20 | band-gated funding carry | **watchlist** (net-pos, not robust) | funding-regime income + unmodeled tail |
+| 21-25 | microstructure: feed fix → CVD forward-test | closed negative | order flow already in the price |
+| 22 | macro prior WF (DXY/US10Y/VIX/SP500) | closed | VIX best, SVB-contaminated to flat |
+| 23-24 | carry basis tail + basis-stop | watchlist de-risk | bounded tail, execution-dependent |
+| 26 | taker-buy-ratio bar order-flow WF | closed negative | whipsaw / bull-beta / inert |
+| 27 | carry funding-regime WF | closed (not robust) | neg-regime bleeds small, not flat |
+
+### 28.2 The conclusion
+**No strategy with a ROBUST OUT-OF-SAMPLE edge — one that holds across BOTH bull
+and bear regimes — exists on these perps (BTC/ETH/SOL) at free-data resolution
+under real CoinDCX perp costs.** Every apparent edge is one of:
+- **Bull beta** — rides the 2023-25 bull, bleeds in the 2025-26 downtrend
+  (grid, long-only trend, breakout/momentum, funding carry positive-regime,
+  macro SP500/DXY, taker-ratio 4h L gated on one asset).
+- **Bear beta** — shorts profit only in the one downtrend, blow up in bulls
+  (long/short trend, daily supertrend L/S, VIX, taker-ratio 4h L/S short leg).
+- **Path luck** — one asset/period looks best for a reason the others refute
+  (ETH supertrend 1d L/S §19, BTC taker-ratio 4h L gated §26).
+- **Whipsaw** — chews itself on noise in choppy regimes (1h order-flow, 4h L/S).
+- **Coincident, not leading** — order flow (tick CVD §25, bar ratio §26)
+  reflects the move in progress; already in the price.
+
+The fixed 70/30 split was adversarial (OOS = the single 2025-26 downtrend), but
+the regime-balanced K=4 walk-forward — the fairest test, scoring every regime —
+refuted every candidate too. Long-only rides bulls and bleeds in bears;
+long/short bleeds in bulls and profits in bears; neither nets positive across
+both. Funding carry nets positive but is funding-regime income (positive-funding
+harvest), not alpha, with a left-tail (now bounded by the §24 basis-stop) and
+venue/execution dependence.
+
+### 28.3 The one non-negative result — funding carry, watchlist, not deployed
+The band-gated one-sided funding carry (~7%/yr BTC/ETH, ~4.6%/yr SOL on perp
+notional; ~3.5%/yr on 2× total capital at lev 1) is the only net-positive-
+after-all-real-costs result. It is the single deploy candidate, kept on the
+**watchlist** (NOT deployed), because:
+1. Not a robust edge — positive-funding-regime income only; §27 shows neg-regime
+   bleeds small (not flat). Fails "profit across both regime types."
+2. Left-tail — §23 quantified the basis/short-squeeze tail (rare-event, cycle-
+   wiping 5-20% in cascades excluded from the 2023-26 sample). §24 showed a 100bps
+   basis-stop caps it at ~1% for ~0 in-sample cost, but squeeze *execution* (the
+   premium gaps <100→500-2000bps in one print) means a real stop fills at 2-5%,
+   not 1% — bounded in theory, execution-uncertain in practice.
+3. Venue — Binance funding/basis ≠ CoinDCX INR-margin perp; must verify CoinDCX's
+   own marks before any deployment.
+4. Low return for complexity — ~3.75%/yr on 2× capital for two-leg real-time basis
+   monitoring + squeeze execution + the tail risk. Infrastructure-heavy for the
+   return.
+
+Bar to deploy (unchanged): verify CoinDCX actual funding + basis; engineer the
+squeeze hedge / reserve for a 15-20% spike; confirm the ~7%/yr is worth the
+(now-bounded) tail. None of these are parameter tweaks — they are real execution
+engineering on the venue, which is out of scope for this research phase.
+
+### 28.4 What was built (reusable infra, kept)
+- `app/backtest/engine.py`: dynamic signed funding (`funding_rates`), regime
+  gate (`regime_sma`), shorts (`allow_short`), maker-on-limit, fee/funding
+  double-count fix, wall-clock daily-loss fix. `cfg_for(kind)` exit contract.
+- `scripts/regime_wf.py`: the regime-balanced K=4 walk-forward harness (the
+  primary gate); taker-ratio-aware resample.
+- `scripts/pull_binance.py` + `pull_funding.py`/`real_funding.py`: perp+spot
+  klines (taker buy volume kept), real funding history, ms/µs fix.
+- `scripts/funding_carry_band.py` + `carry_funding_regime.py`: band-gated carry
+  + funding-regime decomposition.
+- `scripts/basis_risk.py` + `carry_stop.py`: basis tail quant + basis-stop de-risk.
+- `scripts/microstructure.py`: CoinDCX Socket.IO EIO=3 recorder (the §21 feed
+  unblock — real engineering progress). Deployed on Oracle Cloud, recording 24/7.
+- `scripts/cvd_forward.py`: tick CVD forward-test harness.
+- `app/strategy/taker_ratio.py`: bar order-flow signal.
+
+### 28.5 Honest framing
+This is the negative result the research set out to find or rule out. "No robust
+retail edge on these perps at free-data resolution across both regimes" is itself
+the finding — it is not a failure to find a strategy, it is a characterization of
+the market: at retail cost + free public data, price/order-flow/macro signals are
+either regime beta, path luck, or already-priced. The carry is the exception that
+proves the rule — it is positive because it is paid to provide a service (funding
+liquidity to leveraged longs), not because it predicts price. Deployable only if
+the venue execution and the (bounded) tail are engineered, at a return that may
+not justify the work.
+
+**Research concludes.** Recorders stay running on the Oracle box (accruing a
+longer tick sample / future volume-profile option); the carry stays on the
+watchlist as the only deploy candidate if execution is ever engineered.
+
+## §29. Post-conclusion follow-ups — venue-verify (#1), order-book depth (#2), volume profile (#3); none manufactures a robust edge
+
+> After §28, the three "could there still be something" directions were tried in
+> order: (1) engineer the carry toward deploy via venue verification, (2) order-
+> book depth (the one untested order-flow derivative), (3) volume profile from
+> accrued ticks. None produces a robust edge; #1 makes the carry LESS deployable
+> on the actual venue, #2/#3 are forward-accrual / thin and map to closed classes.
+
+### 29.1 #1 — CoinDCX venue verification (the §20/§23 venue caveats)
+`scripts/coindcx_venue.py` (public API, no auth) + a forward recorder
+`scripts/coindcx_venue_recorder.py` (deployed on the cloud box as
+`coindcx-venue.service`, polling every 60s). Findings:
+
+- **Fees verified** (instrument endpoint): CoinDCX INR-margin perp maker **0.0236%** /
+  taker **0.059%** — slightly HIGHER than the carry backtest assumed (0.02%/0.04%).
+  Negligible on carry (1-10 flips/2.5yr → fee delta ≪ funding income). Verdict holds.
+  `funding_frequency=8h` confirmed (matches model).
+- **Funding: NO public history.** CoinDCX exposes no funding-rate-history endpoint;
+  the real-time endpoint `public.coindcx.com/market_data/v3/current_prices/futures/rt`
+  (`fr` current / `efr` next) is the only public source. Spot-check NOW: CoinDCX
+  `efr`=0.0001 = Binance `lastFunding`=0.0001 for BTC/ETH/SOL → the Binance funding
+  PROXY is reasonable for the funding LEVEL. But history cannot be pulled → the
+  ~7%/yr cannot be recomputed on CoinDCX funding retrospectively; must be accrued
+  forward (the recorder does this).
+- **Basis: INR-margin has NO USDT spot leg.** CoinDCX spot is INR-quoted (BTCINR), not
+  BTCUSDT. Synthetic USDT spot = BTCINR / USDTINR = TWO INR legs → carries a USDTINR
+  FX risk the Binance perp+USDT-spot proxy did NOT have. INR-spot OHLC history is
+  NOT public (candle endpoint returns no_data for BTCINR; v2 needs auth). Current
+  basis snapshot = perp mark vs synthetic spot = **−32 to −38bps** (within the
+  Binance §23 range of −186..+69bps; no red flag from 1 snapshot).
+
+**Net #1: the carry is LESS deployable on CoinDCX than the Binance-proxy backtest
+suggested**, not more: an extra USDTINR FX leg in the hedge, and BOTH venue caveats
+(§20 funding, §23 basis) are forward-only (no public history). The forward recorder
+will close both over time — until then the §20/§23 venue caveats STAND. Fees higher
+(negligible). No new edge; the deploy bar (engineer the squeeze hedge + verify
+venue) is unchanged and now known to be harder (FX leg). Carry stays watchlist,
+NOT deployed.
+
+### 29.2 #2 — order-book imbalance (OBI) from depth (the untested order-flow derivative)
+`scripts/microstructure.py` extended to capture `depth-update-20` (CoinDCX emits
+it on the same channel as `new-trade` — a 20-level SNAPSHOT ~1/s, NOT a diff, so
+OBI = (Σbid_qty − Σask_qty)/(Σbid_qty+Σask_qty) directly, no local book). Deployed
+across the 3 recorders (BTC/ETH/SOL `depth_*.csv` accruing). `scripts/obi_forward.py`
+(forward-test harness, mirrors §25 `cvd_forward.py`: smoothed-OBI sign vs next-
+horizon MID return, hit% + flip-cost net equity). Same gate as §25 (hit%
+materially >50% AND net_eq>1 over ≥1 week).
+
+Status: accrual started (depth ~1/s, retail-friendly latency — NOT microsecond
+HFT, so the "retail can't compete" concern is milder than feared). OBI is noisy
+at 1s (swings −0.93..+0.95 in samples). Forward-test in ≥1 week. Honest prior:
+§25 (trade CVD) and §26 (bar taker-ratio) both closed order flow as coincident /
+already-priced; OBI is RESTING liquidity (different in theory) but is the third
+order-flow derivative tested — expected to close the same way. Not run yet
+(needs accrual).
+
+### 29.3 #3 — volume profile from accrued ticks (the low-EV "long shot")
+`scripts/volume_profile.py` — REAL tick volume-at-price (not the OHLC
+approximation §25 called weaker): per 4h window, bin ticks by price → POC (max-
+vol price), value area (70% of volume around POC), VAH/VAL; forward-test
+reversion (fade VAH/VAL) vs breakout (follow VAH/VAL). Ran on the 16d accrued
+tick sample (BTC 10.4M / ETH 9.9M / SOL 2.2M rows, ~95 windows):
+
+| pair | kind | n | hit% | net_eq |
+|---|---|---:|---:|---:|
+| BTC | reversion | 10 | 40.0 | 0.990 |
+| BTC | breakout | 10 | 60.0 | 1.003 |
+| ETH | reversion | 8 | too few | — |
+| ETH | breakout | 8 | too few | — |
+| SOL | reversion | 14 | 35.7 | 0.982 |
+| SOL | breakout | 14 | 64.3 | 0.996 |
+
+Signal fires only 8-15% of windows (close sits inside VA otherwise). **No edge:**
+n=8-14 per kind is statistically VOID; reversion hit% < 50% everywhere; breakout
+hit% > 50% but net_eq ≤ 1.003 (breakeven-to-negative after flip cost). 16d is too
+thin for a robust VP walk-forward (need months). Both VP uses map to classes §18
+refuted on price bars (reversion = mean-revert; breakout = bull-beta). Consistent
+with the handoff's "long shot." Recorders keep accruing for a longer-sample test,
+but the structural read says low EV.
+
+### 29.4 Net
+No robust edge from any follow-up. #1 made the carry's deploy bar HARDER (FX leg +
+forward-only venue caveats), not easier. #2 is accruing (verdict in ≥1 week, prior
+negative). #3 is thin + maps to refuted classes. The §28 conclusion holds: no
+robust retail perp edge at free-data resolution across both regimes. The carry
+remains the only watchlist candidate, now with a known-harder venue path; OBI is
+the one live test still pending. New scripts: `coindcx_venue.py`,
+`coindcx_venue_recorder.py`, `obi_forward.py`, `volume_profile.py`;
+`microstructure.py` extended (depth). Logs: `reports/coindcx_venue.log`,
+`reports/volume_profile_btc.log`.
