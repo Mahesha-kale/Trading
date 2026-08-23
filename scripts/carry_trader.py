@@ -46,6 +46,7 @@ class TraderState:
     halted: bool = False
     halted_orphan: bool = False
     last_feed_ts: int = 0
+    corrupt: bool = False  # state.json missing/corrupt at load -> halt, don't guess (SPEC rule 5)
 
 
 class TiltSignal:
@@ -66,7 +67,7 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
     halt_file = REPORTS / "carry_trader.HALT"
     log.info("carry_trader start live=%s band=%s", live, state.band)
     if live and client is not None:
-        await reconcile(state, client, cfg["pair"])
+        await reconcile(state, client, cfg)
         if state.halted:
             _save_state(state_path, state); return
     while not state.halted:
@@ -77,7 +78,9 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
         s = await feed()  # FeedSample or None
         if s is None:
             state = await _on_feed_outage(state, client, live, cfg)
-            _save_state(state_path, state); continue
+            _save_state(state_path, state)
+            await asyncio.sleep(cfg.get("poll_s", 60))
+            continue
         state.last_feed_ts = s.ts
         # basis-stop (60s): force flatten on squeeze spike
         if state.side != 0 and s.basis_bps > cfg["basis_stop_bps"]:
@@ -116,10 +119,13 @@ def _load_state(path) -> TraderState:
     if p.exists():
         try:
             d = json.loads(p.read_text())
-            return TraderState(**d)
         except (json.JSONDecodeError, TypeError, ValueError):
-            log.warning("state file corrupt/empty -> fresh state"); return TraderState()
-    return TraderState()
+            log.warning("state file corrupt -> flag corrupt")
+            st = TraderState(); st.corrupt = True; return st
+        d.pop("corrupt", None)  # corrupt is a transient load-time signal; never reload as corrupt
+        return TraderState(**d)
+    log.warning("state file missing -> flag corrupt")
+    st = TraderState(); st.corrupt = True; return st
 
 
 def _save_state(path, st: TraderState) -> None:
@@ -198,8 +204,9 @@ async def _on_feed_outage(st, client, live, cfg):
     return st
 
 
-async def reconcile(st: TraderState, client, pair: str) -> None:
+async def reconcile(st: TraderState, client, cfg) -> None:
     """Exchange truth wins. If local disagrees or is corrupt and exchange is flat -> halt (don't guess)."""
+    pair = cfg["pair"]
     try:
         poss = await client.get_positions(pair=pair)
     except Exception as e:  # noqa: BLE001 - fault boundary: can't reach exchange -> halt
@@ -210,7 +217,20 @@ async def reconcile(st: TraderState, client, pair: str) -> None:
             log.warning("reconcile: local side=%s but exchange flat -> halt (don't guess)", st.side)
             st.halted = True; st.side = 0; st.qty = 0.0
         return
-    # exchange has a position -> adopt exchange truth
+    # exchange has a position
+    if st.corrupt:
+        # corrupt/missing state + exchange position -> flatten + halt (don't guess) (SPEC rule 5).
+        # _flatten_all guards `if st.side == 0: return`, but fresh corrupt state is flat; set
+        # side/qty to the real exchange position so _flatten_all actually exits the perp.
+        log.warning("reconcile: corrupt/missing state + exchange has position -> flatten + halt (don't guess)")
+        p = open_pos[0]
+        sz = abs(float(p.get("position_size", 0)))
+        st.side = -1 if str(p.get("side", "short")) == "short" else 1
+        st.qty = sz
+        await _flatten_all(st, client, True, cfg)
+        st.halted = True; st.side = 0; st.qty = 0.0
+        return
+    # valid state + exchange position -> adopt exchange truth (restart recovery, resume)
     p = open_pos[0]
     sz = abs(float(p.get("position_size", 0)))
     st.side = -1 if str(p.get("side", "short")) == "short" else 1
@@ -274,19 +294,29 @@ async def _demo_faults():
 
 
 async def _demo_reconcile():
+    cfg = {"pair": "B-BTC_USDT", "spot_pair": "BTCINR"}
     # case 1: local says flat, exchange says short 0.1 -> exchange truth wins, re-sync
     class FC:
         async def get_positions(self, pair=None):
             return [{"id": "p1", "pair": "B-BTC_USDT", "position_size": -0.1, "side": "short"}]
     st = TraderState(side=0)
-    await reconcile(st, FC(), "B-BTC_USDT")
+    await reconcile(st, FC(), cfg)
     assert st.side == -1 and abs(st.qty - 0.1) < 1e-9, (st.side, st.qty)
     # case 2: local claims short but exchange is flat -> halt (don't guess)
     class FC2:
         async def get_positions(self, pair=None): return []
     st2 = TraderState(side=-1, qty=0.1)
-    await reconcile(st2, FC2(), "B-BTC_USDT")
+    await reconcile(st2, FC2(), cfg)
     assert st2.halted is True, ("expected halt on local/exchange mismatch", st2.halted)
+    # case 3: corrupt/missing state + exchange has position -> halt (not adopt) (SPEC rule 5)
+    class FC3:
+        async def get_positions(self, pair=None):
+            return [{"id": "p1", "pair": "B-BTC_USDT", "position_size": -0.1, "side": "short"}]
+        async def exit_position(self, position_id): return {"status": "ok"}
+        async def create_spot_order(self, **k): return {"status": "ok"}
+    st3 = TraderState(); st3.corrupt = True
+    await reconcile(st3, FC3(), cfg)
+    assert st3.halted is True and st3.side == 0, ("corrupt+open should halt, not adopt", st3.halted, st3.side)
     print("carry_trader reconcile OK")
 
 
