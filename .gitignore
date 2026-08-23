@@ -56,3 +56,6 @@ reports/*.err
 
 # --- Knowledge graph (regenerated locally) ---
 graphify-out/
+# CoinDCX venue forward recorder output
+depth_*.csv
+coindcx_venue.csv

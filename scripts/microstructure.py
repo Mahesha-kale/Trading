@@ -87,6 +87,31 @@ def side_from_trade(t: dict) -> int:
     return -1 if t.get("m") else 1
 
 
+def parse_depth(payload) -> tuple[int, float, float, float, float, float] | None:
+    """depth-update-20 payload: {event, data(JSON str)} -> (ts_ms, obi, bid_qty,
+    ask_qty, top_bid, top_ask). depth-update-20 is a 20-level SNAPSHOT each msg (not
+    a diff), so OBI = (sum_bid - sum_ask)/(sum_bid + sum_ask) directly. OBI>0 =
+    more bid resting liquidity (buy wall). ~1/s, retail-friendly."""
+    d = payload.get("data") if isinstance(payload, dict) else None
+    if isinstance(d, str):
+        try:
+            d = json.loads(d)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(d, dict):
+        return None
+    try:
+        b = [(float(p), float(q)) for p, q in d.get("b", [])]
+        a = [(float(p), float(q)) for p, q in d.get("a", [])]
+    except (TypeError, ValueError):
+        return None
+    if not b or not a:
+        return None
+    bq = sum(q for _, q in b); aq = sum(q for _, q in a)
+    obi = (bq - aq) / (bq + aq) if (bq + aq) else 0.0
+    return int(d.get("E", 0)), obi, bq, aq, b[0][0], a[0][0]
+
+
 async def main(pair=PAIR, run_s=None):
     url = sio_url()
     out = Path(f"reports/ticks_{pair.replace('-','_').replace('@','_')}.csv")
@@ -95,6 +120,14 @@ async def main(pair=PAIR, run_s=None):
     w = csv.writer(f)
     if new_file:
         w.writerow(["ts_ms", "price", "qty", "side", "symbol"])
+    # depth OBI log (separate CSV; same WS conn, no extra join). depth-update-20
+    # is a 20-level snapshot ~1/s -> order-book imbalance for the §25-style test.
+    dout = Path(f"reports/depth_{pair.replace('-','_').replace('@','_')}.csv")
+    dfile = open(dout, "a", newline="", buffering=1)
+    dw = csv.writer(dfile)
+    if not dout.exists() or dout.stat().st_size == 0:
+        dw.writerow(["ts_ms", "obi", "bid_qty", "ask_qty", "top_bid", "top_ask"])
+    nd = 0
     ticks = deque(maxlen=WINDOW)
     cvd = 0.0
     n = 0
@@ -132,6 +165,14 @@ async def main(pair=PAIR, run_s=None):
                     event, payload = ev
                     if event == "__ping__":
                         await ws.send("3"); continue
+                    if event == "depth-update-20":
+                        d = parse_depth(payload)
+                        if d:
+                            ts, obi, bq, aq, tb, ta = d
+                            dw.writerow([ts, round(obi, 4), round(bq, 4),
+                                         round(aq, 4), tb, ta])
+                            nd += 1
+                        continue
                     if event != "new-trade":
                         continue
                     t = parse_trade(payload)
@@ -157,6 +198,7 @@ async def main(pair=PAIR, run_s=None):
             print(f"  drop: {str(e)[:60]} -> reconnect in 2s", flush=True)
             await asyncio.sleep(2)
     f.close()
+    dfile.close()
     imb = sum(ticks) / max(len(ticks), 1)
     print(f"\nrecorded {n} trades -> {out} | final cvd={cvd:+.1f} imbalance={imb:+.3f}")
     print("edge validation: forward-test CVD as a short-horizon signal over the "
