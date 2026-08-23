@@ -14,6 +14,7 @@ from app.strategy.batch import (AdxTrend, CciReversion, DonchianBreakout,
                                  ObvDivergence, OpeningRangeBreakout, PsarTrend,
                                  StochrsiReversal, VwapPullback, RegimeGate)
 from app.strategy.supertrend import SupertrendStrategy
+from app.strategy.taker_ratio import TakerRatio
 from app.strategy.vwap import VwapReclaim
 from app.strategy.wyckoff import Wyckoff
 
@@ -41,6 +42,7 @@ REGISTRY: dict[str, type[BaseStrategy]] = {
     ObvDivergence.meta.name: ObvDivergence,
     EmaPullback.meta.name: EmaPullback,
     RegimeGate.meta.name: RegimeGate,
+    TakerRatio.meta.name: TakerRatio,
 }
 
 

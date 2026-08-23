@@ -19,7 +19,7 @@ import pandas as pd
 
 BASE = "https://data.binance.vision/data/futures/um/monthly/klines"
 COLS = ["open_time", "open", "high", "low", "close", "volume", "close_time",
-        "quote_vol", "trades", "taker_buy_base", "taker_buy_quote", "ignore"]
+        "quote_volume", "count", "taker_buy_volume", "taker_buy_quote_volume", "ignore"]
 # market -> Binance Vision path segment. futures/um = USDT-M perp; spot = spot.
 MARKETS = {"futures": "futures/um", "spot": "spot"}
 
@@ -44,7 +44,13 @@ def _fetch_month(symbol: str, tf: str, year: int, month: int, base: str = BASE) 
     df = df.assign(open_time=ot)
     df = df[ot.between(int(1.5e12), int(2.05e12))]
     df["ts"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
-    df = df[["ts", "open", "high", "low", "close", "volume"]].set_index("ts")
+    # Keep taker buy volume: bar-level order-flow imbalance proxy
+    # (taker_buy_ratio = taker_buy_base/volume). Binance names the column
+    # taker_buy_volume (base asset); alias to taker_buy_base for downstream.
+    df = df[["ts", "open", "high", "low", "close", "volume",
+             "taker_buy_volume", "taker_buy_quote_volume"]].set_index("ts")
+    df = df.rename(columns={"taker_buy_volume": "taker_buy_base",
+                            "taker_buy_quote_volume": "taker_buy_quote"})
     df = df.astype(float)
     return df
 

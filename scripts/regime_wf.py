@@ -40,8 +40,12 @@ def load_funding(symbol: str) -> pd.Series:
 
 def resample(symbol: str, tf: str) -> pd.DataFrame:
     df = pd.read_csv(f"reports/binance_{symbol}_15m.csv", index_col=0, parse_dates=True).sort_index()
-    return df.resample(tf).agg({"open": "first", "high": "max", "low": "min",
-                                "close": "last", "volume": "sum"}).dropna()
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    # taker_buy_base sums across bars so taker_buy_ratio = sum(tbb)/sum(vol) at the
+    # higher TF (bar-level order-flow imbalance). Present only on freshly-pulled data.
+    if "taker_buy_base" in df.columns:
+        agg["taker_buy_base"] = "sum"
+    return df.resample(tf).agg(agg).dropna()
 
 
 def cfg(kind: str, atr_mult: float, short: bool, gated: bool, funding) -> BacktestConfig:
@@ -85,6 +89,13 @@ CANDS = [
     ("supertrend 4h L/S ungated","supertrend",{"period": 10, "multiplier": 3.0}, "4h", "trend", True,  False, 3.0),
     ("supertrend 1d L/S",       "supertrend", {"period": 10, "multiplier": 3.0}, "1D", "trend", True,  False, 3.0),
     ("ema_cross 4h L/S",        "ema_cross",  {"fast": 21, "slow": 50}, "4h", "trend", True,  False, 3.0),
+    # Taker-buy-ratio order-flow imbalance (structurally different info source).
+    # Persistent direction + deadband hysteresis; trend kind rides the ATR trailer.
+    ("taker_ratio 1h L/S",      "taker_ratio", {"smooth": 24, "edge": 0.0},  "1h", "trend", True,  False, 3.0),
+    ("taker_ratio 1h L",         "taker_ratio", {"smooth": 24, "edge": 0.0},  "1h", "trend", False, False, 3.0),
+    ("taker_ratio 4h L/S",       "taker_ratio", {"smooth": 20, "edge": 0.0},  "4h", "trend", True,  False, 3.0),
+    ("taker_ratio 4h L gated",   "taker_ratio", {"smooth": 20, "edge": 0.0},  "4h", "trend", False, True,  3.0),
+    ("taker_ratio 4h L/S e0.03", "taker_ratio", {"smooth": 20, "edge": 0.03}, "4h", "trend", True,  False, 3.0),
 ]
 
 
