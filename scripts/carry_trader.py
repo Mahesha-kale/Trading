@@ -56,7 +56,7 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
     halt_file = REPORTS / "carry_trader.HALT"
     log.info("carry_trader start live=%s band=%s", live, state.band)
     if live and client is not None:
-        await reconcile(state, client)
+        await reconcile(state, client, cfg["pair"])
         if state.halted:
             _save_state(state_path, state); return
     while not state.halted:
@@ -94,8 +94,11 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
 def _load_state(path) -> TraderState:
     p = Path(path)
     if p.exists():
-        d = json.loads(p.read_text())
-        return TraderState(**d)
+        try:
+            d = json.loads(p.read_text())
+            return TraderState(**d)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            log.warning("state file corrupt/empty -> fresh state"); return TraderState()
     return TraderState()
 
 
@@ -117,12 +120,17 @@ async def _enter_short(st, s, client, live, cfg):
         qty = position_size(cfg["capital"], cfg["stop_fill_est"], cfg["risk_fraction"], cfg["leverage_cap"]) / s.spot_price
         try:
             await client.create_order({"side":"sell","pair":cfg["pair"],"order_type":"market_order","total_quantity":qty,"leverage":cfg["leverage_cap"],"position_margin_type":"isolated"})
-            # ponytail: confirm fill via positions() in Task 6; here assume market fills
+            # ponytail: confirm fill via get_positions() in Task 6; here assume market fills
             await client.create_spot_order(side="buy", pair=cfg["spot_pair"], order_type="market_order", quantity=qty)
         except Exception as e:  # noqa: BLE001 - fault boundary: any leg failure must orphan-guard
             log.error("orphan leg: %s -> exit perp + halt", e)
-            try: await client.exit_position(st)
-            except Exception: pass  # noqa: BLE001, S110 - already halting; cleanup failure is secondary
+            try:
+                poss = await client.get_positions(pair=cfg["pair"])
+                op = [p for p in poss if abs(float(p.get("position_size", 0) or 0)) > 0]
+                if op:
+                    await client.exit_position(str(op[0]["id"]))
+            except Exception:  # noqa: BLE001, S110 - already halting; cleanup failure is secondary
+                pass
             # carry-forward fix: orphan leg must HALT the loop (SPEC error-handling #1), not just flag
             st.halted = True; st.halted_orphan = True; st.side = 0; return
         st.qty = qty
@@ -150,7 +158,7 @@ async def _flatten_all(st, client, live, cfg):
         else:
             pos_id = open_pos[0].get("id")
             if pos_id:
-                await client.exit_position(pos_id)
+                await client.exit_position(str(pos_id))
             else:
                 log.warning("flatten: open position has no id -> skip perp exit")
         await client.create_spot_order(side="sell", pair=cfg["spot_pair"],
@@ -170,13 +178,13 @@ async def _on_feed_outage(st, client, live, cfg):
     return st
 
 
-async def reconcile(st: TraderState, client) -> None:
+async def reconcile(st: TraderState, client, pair: str) -> None:
     """Exchange truth wins. If local disagrees or is corrupt and exchange is flat -> halt (don't guess)."""
     try:
-        poss = await client.positions()
+        poss = await client.get_positions(pair=pair)
     except Exception as e:  # noqa: BLE001 - fault boundary: can't reach exchange -> halt
-        log.error("reconcile: positions() failed -> halt: %s", e); st.halted = True; return
-    open_pos = [p for p in poss if float(p.get("size", 0) or 0) != 0]
+        log.error("reconcile: get_positions failed -> halt: %s", e); st.halted = True; return
+    open_pos = [p for p in poss if abs(float(p.get("position_size", 0) or 0)) > 0]
     if not open_pos:
         if st.side != 0:
             log.warning("reconcile: local side=%s but exchange flat -> halt (don't guess)", st.side)
@@ -184,7 +192,7 @@ async def reconcile(st: TraderState, client) -> None:
         return
     # exchange has a position -> adopt exchange truth
     p = open_pos[0]
-    sz = abs(float(p.get("size", 0)))
+    sz = abs(float(p.get("position_size", 0)))
     st.side = -1 if str(p.get("side", "short")) == "short" else 1
     st.qty = sz
     log.info("reconcile: exchange has %s qty=%s -> adopted", st.side, sz)
@@ -223,7 +231,9 @@ async def _demo_faults():
         def __init__(self): self.calls = []
         async def create_order(self, p): self.calls.append(("perp", p)); return {"status":"ok","orders":[{"id":"1"}]}
         async def create_spot_order(self, **k): self.calls.append(("spot", k)); raise RuntimeError("spot reject")
-        async def exit_position(self, st): self.calls.append(("exit", st)); return {"status":"ok"}
+        async def get_positions(self, pair=None):
+            return [{"id": "p1", "pair": "B-BTC_USDT", "position_size": -0.1, "side": "short"}]
+        async def exit_position(self, position_id): self.calls.append(("exit", position_id)); return {"status":"ok"}
     fc = FakeClient()
     st = TraderState(side=0)
     s = FeedSample(ts=1, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=9_000_000, usdtinr=90)
@@ -231,22 +241,24 @@ async def _demo_faults():
     assert st.side == 0 and st.halted_orphan is True, (st.side, st.halted_orphan)
     # carry-forward fix: orphan leg must also HALT the loop (SPEC error-handling #1)
     assert st.halted is True, ("orphan did not halt", st.halted)
-    assert ("exit", st) in fc.calls or any(c[0]=="exit" for c in fc.calls)
+    # orphan cleanup must have exited the perp position by its real id string
+    assert any(c[0] == "exit" and c[1] == "p1" for c in fc.calls), fc.calls
     print("carry_trader faults OK")
 
 
 async def _demo_reconcile():
     # case 1: local says flat, exchange says short 0.1 -> exchange truth wins, re-sync
     class FC:
-        async def positions(self): return [{"pair":"B-BTC_USDT","size":-0.1,"side":"short","leverage":3}]
+        async def get_positions(self, pair=None):
+            return [{"id": "p1", "pair": "B-BTC_USDT", "position_size": -0.1, "side": "short"}]
     st = TraderState(side=0)
-    await reconcile(st, FC())
+    await reconcile(st, FC(), "B-BTC_USDT")
     assert st.side == -1 and abs(st.qty - 0.1) < 1e-9, (st.side, st.qty)
     # case 2: local claims short but exchange is flat -> halt (don't guess)
     class FC2:
-        async def positions(self): return []
+        async def get_positions(self, pair=None): return []
     st2 = TraderState(side=-1, qty=0.1)
-    await reconcile(st2, FC2())
+    await reconcile(st2, FC2(), "B-BTC_USDT")
     assert st2.halted is True, ("expected halt on local/exchange mismatch", st2.halted)
     print("carry_trader reconcile OK")
 
