@@ -55,6 +55,10 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
     state = _load_state(state_path)
     halt_file = REPORTS / "carry_trader.HALT"
     log.info("carry_trader start live=%s band=%s", live, state.band)
+    if live and client is not None:
+        await reconcile(state, client)
+        if state.halted:
+            _save_state(state_path, state); return
     while not state.halted:
         if halt_file.exists():
             await _flatten_all(state, client, live, cfg)
@@ -119,7 +123,8 @@ async def _enter_short(st, s, client, live, cfg):
             log.error("orphan leg: %s -> exit perp + halt", e)
             try: await client.exit_position(st)
             except Exception: pass  # noqa: BLE001, S110 - already halting; cleanup failure is secondary
-            st.halted_orphan = True; st.side = 0; return
+            # carry-forward fix: orphan leg must HALT the loop (SPEC error-handling #1), not just flag
+            st.halted = True; st.halted_orphan = True; st.side = 0; return
         st.qty = qty
     else:
         st.qty = 0.0
@@ -147,6 +152,26 @@ async def _on_feed_outage(st, client, live, cfg):
     return st
 
 
+async def reconcile(st: TraderState, client) -> None:
+    """Exchange truth wins. If local disagrees or is corrupt and exchange is flat -> halt (don't guess)."""
+    try:
+        poss = await client.positions()
+    except Exception as e:  # noqa: BLE001 - fault boundary: can't reach exchange -> halt
+        log.error("reconcile: positions() failed -> halt: %s", e); st.halted = True; return
+    open_pos = [p for p in poss if float(p.get("size", 0) or 0) != 0]
+    if not open_pos:
+        if st.side != 0:
+            log.warning("reconcile: local side=%s but exchange flat -> halt (don't guess)", st.side)
+            st.halted = True; st.side = 0; st.qty = 0.0
+        return
+    # exchange has a position -> adopt exchange truth
+    p = open_pos[0]
+    sz = abs(float(p.get("size", 0)))
+    st.side = -1 if str(p.get("side", "short")) == "short" else 1
+    st.qty = sz
+    log.info("reconcile: exchange has %s qty=%s -> adopted", st.side, sz)
+
+
 def demo() -> None:
     import numpy as np
     # side 0 (flat), rate > band -> ENTER_SHORT
@@ -160,6 +185,7 @@ def demo() -> None:
     print("carry_trader signal OK")
     import asyncio
     asyncio.run(_demo_faults())
+    asyncio.run(_demo_reconcile())
 
 
 async def _demo_faults():
@@ -174,8 +200,26 @@ async def _demo_faults():
     s = FeedSample(ts=1, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=9_000_000, usdtinr=90)
     await _enter_short(st, s, fc, live=True, cfg={"capital":100_000,"stop_fill_est":0.02,"risk_fraction":0.05,"leverage_cap":5,"pair":"B-BTC_USDT","spot_pair":"BTCINR"})
     assert st.side == 0 and st.halted_orphan is True, (st.side, st.halted_orphan)
+    # carry-forward fix: orphan leg must also HALT the loop (SPEC error-handling #1)
+    assert st.halted is True, ("orphan did not halt", st.halted)
     assert ("exit", st) in fc.calls or any(c[0]=="exit" for c in fc.calls)
     print("carry_trader faults OK")
+
+
+async def _demo_reconcile():
+    # case 1: local says flat, exchange says short 0.1 -> exchange truth wins, re-sync
+    class FC:
+        async def positions(self): return [{"pair":"B-BTC_USDT","size":-0.1,"side":"short","leverage":3}]
+    st = TraderState(side=0)
+    await reconcile(st, FC())
+    assert st.side == -1 and abs(st.qty - 0.1) < 1e-9, (st.side, st.qty)
+    # case 2: local claims short but exchange is flat -> halt (don't guess)
+    class FC2:
+        async def positions(self): return []
+    st2 = TraderState(side=-1, qty=0.1)
+    await reconcile(st2, FC2())
+    assert st2.halted is True, ("expected halt on local/exchange mismatch", st2.halted)
+    print("carry_trader reconcile OK")
 
 
 if __name__ == "__main__":
