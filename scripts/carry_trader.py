@@ -48,6 +48,16 @@ class TraderState:
     last_feed_ts: int = 0
 
 
+class TiltSignal:
+    """Pluggable directional tilt source (sub-project 2). conviction in [0,1]; 0 = no tilt."""
+    async def conviction(self, sample: FeedSample, state: TraderState) -> float:
+        return 0.0
+
+
+class NoTilt(TiltSignal):
+    pass
+
+
 async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=False) -> None:
     """Main loop. cfg: {band, capital, stop_fill_est, risk_fraction, leverage_cap, max_dd, basis_stop_bps, pair, spot_pair}.
     client/feed injectable for tests. live=False = paper (log only)."""
@@ -87,6 +97,16 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
             await _enter_short(state, s, client, live, cfg)
         elif action == "FLATTEN":
             await _flatten_all(state, client, live, cfg)
+        # tilt: pluggable directional overlay (sub-project 2 supplies real impl)
+        tilt = cfg.get("tilt") or NoTilt()
+        c = await tilt.conviction(s, state)
+        if c > 0 and state.side == 0:  # only tilt when flat (no stacking on carry)
+            from scripts.risk_budget import tilt_size
+            tqty = tilt_size(cfg["capital"], c, cfg["risk_fraction"], cfg["leverage_cap"]) / s.spot_price
+            log.info("TILT conviction=%.2f qty=%s (stub: no order in paper)", c, tqty)
+            if live and client is not None:
+                # sub-project 2+3 supplies sign + overlay
+                pass
         _save_state(state_path, state)
         await asyncio.sleep(cfg.get("poll_s", 60))
 
@@ -214,6 +234,13 @@ def demo() -> None:
     asyncio.run(_demo_faults())
     asyncio.run(_demo_reconcile())
     asyncio.run(_demo_sign())
+    asyncio.run(_demo_tilt())
+
+
+async def _demo_tilt():
+    t = NoTilt()
+    assert await t.conviction(FeedSample(0, 0, 0, 0, 0, 0), TraderState()) == 0.0
+    print("carry_trader tilt OK")
 
 
 async def _demo_sign():
