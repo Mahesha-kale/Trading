@@ -1788,3 +1788,126 @@ Delivered: `scripts/risk_budget.py`, `scripts/carry_trader.py`,
 State: `reports/carry_trader_state.json`. Kill-switch: `reports/carry_trader.HALT`.
 See [[funding-carry-band]] (§20), [[carry-basis-stop]] (§24),
 [[carry-funding-regime-walkforward]] (§27), [[post-conclusion-followups]] (§29).
+
+## §31. Regime-gate tilt sweep — 0/18 cells pass; NoTilt; carry-only deploy stands (sub-project 2)
+
+> §30 built the carry paper-trader with a pluggable tilt slot (`TiltSignal` /
+> `NoTilt`). This section logs sub-project 2: a pre-registered walk-forward
+> sweep of 3 regime-gate signals × 3 assets × 2 directions (18 cells) to find
+> a directional tilt for a delta-neutral carry trader. Result: **0/18 cells
+> PASS → `NoTilt`**. The tilt slot stays sealed; deploy remains carry-only
+> (~5-6%/yr, §27). Spec:
+> `docs/superpowers/specs/2026-08-24-regime-gate-tilt-design.md`; plan:
+> `docs/superpowers/plans/2026-08-24-regime-gate-tilt.md`.
+
+### 31.1 Sweep structure
+
+3 gates × 3 assets × 2 directions = 18 cells.
+
+- **Gates:** `funding_slope_signal` (rolling-window z-score of funding rate
+  slope), `trend_signal` (supertrend-style: `period` + `mult`), `basis_signal`
+  (rolling-window basis threshold `thr_bps`). Each gate outputs signed
+  conviction ∈ [-1, +1]: `+=long perp, -=short perp` (the tilt slot contract
+  from §30.1).
+- **Assets:** BTCUSDT, ETHUSDT, SOLUSDT (perp).
+- **Directions:** long, short (swept independently — the gate's conviction
+  sign is forced, not derived; this tests each direction as a standalone tilt).
+- **Path:** bar-level path equity, 15m bars, over the §27 walk-forward
+  window.
+
+### 31.2 Pass criterion (pre-registered)
+
+A cell PASSes iff net > 0 after real costs in **all three** guards
+simultaneously:
+
+1. **K=4 contiguous time-slice walk-forward:** net > 0 in ≥ 3/4 folds AND
+   aggregate net > 0.
+2. **70/30 split:** train 70% / test 30% by time; net > 0 on the test slice.
+3. **Bootstrap CI:** 1000 resample, circular-block `block=10`, fixed seed
+   `np.random.default_rng(0)`, 95% CI lower bound > 0.
+
+No Bonferroni (relaxed goalpost; the bootstrap+split70 guard is the path-luck
+guard). This is the §19 path-luck guard
+([[multi-asset-regime-walkforward]]) — the same one that killed the §13
+walk-forward's single 1 ETH outlier.
+
+### 31.3 Cost model (§29 CoinDCX real)
+
+- Taker fee **0.059% per entry/exit** ( CoinDCX perp taker, §29).
+- **5 bps/side execution-gap slippage**.
+- **Funding paid/received at 8h marks ONLY** (mark-aligned, NOT
+  forward-filled — forward-fill = 32× overcharge, the §27 calibration fix).
+- **NO 1% TDS** — naked perp, no spot leg (TDS is spot-sell only, §20/§27).
+- On the naked tilt: long in positive funding **pays**; short in positive
+  funding **receives** (and vice versa in negative funding).
+
+### 31.4 Per-cell verdict table
+
+From `reports/regime_gate_wf.log` (18 rows):
+
+| asset | gate | dir | net | ci_lo | k4 | split70 | verdict | params |
+|---|---|---|---|---|---|---|---|---|
+| BTCUSDT | funding_slope | long | -1.0 | -11.4951 | False | False | FAIL | `{'w': 40, 'z': 1.0}` |
+| BTCUSDT | funding_slope | short | -1.0 | -11.4103 | False | False | FAIL | `{'w': 40, 'z': 1.0}` |
+| BTCUSDT | trend | long | 2.141 | -0.0129 | True | False | FAIL | `{'period': 28, 'mult': 3.0}` |
+| BTCUSDT | trend | short | -0.8575 | -3.2365 | False | True | FAIL | `{'period': 28, 'mult': 3.0}` |
+| BTCUSDT | basis | long | -0.7296 | -2.7402 | False | True | FAIL | `{'w': 20, 'thr_bps': 5.0}` |
+| BTCUSDT | basis | short | 0.0983 | -1.177 | True | False | FAIL | `{'w': 20, 'thr_bps': 5.0}` |
+| ETHUSDT | funding_slope | long | -1.0 | -11.565 | False | False | FAIL | `{'w': 40, 'z': 1.0}` |
+| ETHUSDT | funding_slope | short | -1.0 | -11.517 | False | False | FAIL | `{'w': 40, 'z': 1.0}` |
+| ETHUSDT | trend | long | 2.7402 | -0.1823 | True | True | FAIL | `{'period': 28, 'mult': 2.0}` |
+| ETHUSDT | trend | short | -0.9351 | -4.3179 | False | False | FAIL | `{'period': 28, 'mult': 2.0}` |
+| ETHUSDT | basis | long | -0.6649 | -2.8257 | False | False | FAIL | `{'w': 10, 'thr_bps': 5.0}` |
+| ETHUSDT | basis | short | -0.6142 | -2.6847 | False | False | FAIL | `{'w': 10, 'thr_bps': 5.0}` |
+| SOLUSDT | funding_slope | long | -1.0 | -11.6753 | False | False | FAIL | `{'w': 20, 'z': 1.0}` |
+| SOLUSDT | funding_slope | short | -1.0 | -11.9071 | False | False | FAIL | `{'w': 20, 'z': 1.0}` |
+| SOLUSDT | trend | long | 5.3468 | 0.1793 | True | False | FAIL | `{'period': 14, 'mult': 3.0}` |
+| SOLUSDT | trend | short | -0.9917 | -6.5961 | False | True | FAIL | `{'period': 14, 'mult': 3.0}` |
+| SOLUSDT | basis | long | -0.9517 | -4.6394 | False | True | FAIL | `{'w': 20, 'thr_bps': 5.0}` |
+| SOLUSDT | basis | short | -0.374 | -2.363 | False | False | FAIL | `{'w': 20, 'thr_bps': 5.0}` |
+
+### 31.5 Results narrative
+
+All 18 cells FAIL → `reports/regime_gate_pass.json` is `[]` →
+`load_tilt_signal()` returns `NoTilt`. The tilt slot stays `NoTilt`; deploy is
+carry-only (~5-6%/yr, §27). Consistent with §28 (no robust retail perp edge
+at free-data resolution).
+
+**funding_slope (all 6 cells):** every cell net = -1.0 (total wipeout). Cause:
+conviction flips ~10,105 times over the window — the per-flip cost
+(fee + slippage on each entry/exit) exceeds any directional capture. Funding
+slope as a directional signal is churn-ruin, not edge. The bootstrap ci_lo
+(~-11.4 to -11.9) confirms the wipeout is not path-luck; it is structural.
+
+**trend long (3 cells, the only positive-net cells):** BTC +2.141, ETH +2.7402,
+SOL +5.3468 — proves the sim is sane (it rewards bull-beta, as it should in a
+bull window). But every one fails the path-luck guard:
+- BTC: `k4=True` but `split70=False` (train captures the bull, test doesn't).
+- ETH: `k4=True` and `split70=True` but bootstrap `ci_lo=-0.1823` (<0).
+- SOL: `k4=True` but `split70=False` (`ci_lo=+0.1793` would pass the
+  bootstrap guard alone, but split70 kills it).
+
+Trend-long is one-regime bull-beta, not a robust edge — exactly the §19
+path-luck trap the bootstrap+split70 guard was built to catch. The guard
+earned its keep: three cells that look net-positive fall to different guards
+each, the signature of path luck, not edge.
+
+**trend short / basis (both directions, all 9 cells):** all negative net.
+Short trend fights the bull regime (expected — short in a bull window pays
+the negative drift). Basis (contango→long / backwardation→short) has no
+directional capture after costs; the basis threshold is too coarse a signal
+to time directional bets, and the basis itself is dominated by the same
+funding/regime state the carry core already monetizes — no independent
+directional information.
+
+### 31.6 Conclusion
+
+No regime gate produces a net-positive-after-real-costs directional tilt
+robust to path-luck. The carry core (~5-6%/yr, §27
+[[carry-funding-regime-walkforward]]) remains the only standing edge. Tilt
+slot sealed `NoTilt`. Sub-project 3 (asymmetric risk overlay) is moot unless
+a future gate passes — there is nothing to overlay. The §30 paper-trader's
+tilt slot stays `NoTilt` (returns conviction 0.0); deploy is carry-only.
+
+See [[funding-carry-band]] (§20), [[carry-funding-regime-walkforward]] (§27),
+[[post-conclusion-followups]] (§29), [[multi-asset-regime-walkforward]] (§19).
