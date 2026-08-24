@@ -12,7 +12,9 @@ Usage: python scripts/venue_verify.py run   (live probes -> reports/venue_verify
 from __future__ import annotations
 
 import csv
+import json
 import statistics
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -164,6 +166,87 @@ def _gap_bps(conv: float, spot: float) -> float:
     return abs(conv - spot) / spot * 1e4
 
 
+# --- probe 7: rate limit (light, no stress) ---
+async def rate_limit(client) -> ProbeResult:
+    try:
+        await client.get_wallets()
+        await client.get_wallets()  # 2 rapid reads
+        # documented: 16/s, 960/min. We don't stress-test; just confirm 2 succeed.
+        return ProbeResult("rate_limit", True, {"doc_per_s": 16, "doc_per_min": 960,
+                                                "note": "light probe: 2 rapid reads ok"})
+    except Exception as e:  # noqa: BLE001
+        return ProbeResult("rate_limit", False, error=f"{type(e).__name__}: {e}")
+
+
+PROBES = [auth_liveness, instrument_perp, instrument_spot, funding_accrual,
+          fx_conversion, basis_proxy, rate_limit]
+
+
+async def run_probes(client) -> list[ProbeResult]:
+    return [await p(client) for p in PROBES]
+
+
+def verdict(results: list[ProbeResult]) -> dict:
+    all_pass = all(r.passed for r in results)
+    fx = next((r for r in results if r.name == "fx_conversion"), None)
+    redesign = bool(fx and not fx.passed and fx.error and "gap" in (fx.error or ""))
+    fail_reason = None
+    if not all_pass:
+        fails = [r.name for r in results if not r.passed]
+        fail_reason = "fx_conversion gap >= threshold" if "fx_conversion" in fails and redesign \
+            else f"failed probes: {fails}"
+    return {"verdict": "PASS" if all_pass else "FAIL",
+            "redesign_required": redesign, "fail_reason": fail_reason}
+
+
+def write_gate(results: list[ProbeResult], vdict: dict) -> None:
+    REPORTS.mkdir(exist_ok=True)
+    out = {"timestamp": int(time.time()), **vdict,
+           "threshold_bps": FX_THRESHOLD_BPS, "freshness_h": FRESHNESS_H,
+           "probes": [{"name": r.name, "passed": r.passed,
+                       "detail": r.detail, "error": r.error} for r in results]}
+    GATE_PATH.write_text(json.dumps(out, indent=2))
+    # human log
+    log = REPORTS / "venue_verify.log"
+    lines = [f"venue_verify {vdict['verdict']} @ {time.strftime('%Y-%m-%d %H:%M:%S')}",
+             f"redesign_required={vdict['redesign_required']} fail_reason={vdict['fail_reason']}", ""]
+    for r in results:
+        lines.append(f"  {r.name:20s} {'PASS' if r.passed else 'FAIL'}  {r.error or r.detail}")
+    log.write_text("\n".join(lines) + "\n")
+
+
+def load_gate(path: Path = GATE_PATH) -> dict | None:
+    try:
+        return json.loads(Path(path).read_text())
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
+        return None
+
+
+def gate_is_fresh(gate: dict, freshness_h: float = FRESHNESS_H) -> bool:
+    if not gate or "timestamp" not in gate:
+        return False
+    return (time.time() - float(gate["timestamp"])) / 3600.0 <= freshness_h
+
+
+async def _run_live() -> None:
+    from app.exchange.coindcx import CoinDCXClient
+    async with CoinDCXClient() as client:
+        results = await run_probes(client)
+    v = verdict(results)
+    write_gate(results, v)
+    print(f"venue_verify {v['verdict']} -> {GATE_PATH} "
+          f"(redesign_required={v['redesign_required']})")
+
+
+def main() -> None:
+    import asyncio
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "run":
+        asyncio.run(_run_live())
+    else:
+        demo()
+
+
 def demo() -> None:
     import asyncio
 
@@ -204,12 +287,37 @@ def demo() -> None:
     assert r6.passed and r6.detail["median_abs_basis_bps"] == 5.0, r6
     # probe 5: fx_conversion gap math (no network -> test _gap_bps directly)
     assert abs(_gap_bps(90.05, 90.00) - 5.5556) < 0.01
-    print("venue_verify probes 1-6 OK")
+    # probe 7 + verdict + gate round-trip on a fully-fake client
+    class FullClient(FakeClient):
+        async def get_conversion_rate(self): return 90.00
+        async def get_usdt_inr(self): return 90.00  # 0 gap -> PASS
+    r7 = asyncio.run(rate_limit(FullClient()))
+    assert r7.passed, r7
+    # build a full result list using the fake for the REST probes + synthetic CSV for 4/6
+    # (fx_conversion loops+sleeps; for the demo, test verdict() directly on a crafted list)
+    crafted = [
+        ProbeResult("auth_liveness", True), ProbeResult("instrument_perp", True),
+        ProbeResult("instrument_spot", True), ProbeResult("funding_accrual", True),
+        ProbeResult("fx_conversion", True, {"mean_gap_bps": 3.0}),
+        ProbeResult("basis_proxy", True), ProbeResult("rate_limit", True),
+    ]
+    v = verdict(crafted)
+    assert v["verdict"] == "PASS" and v["redesign_required"] is False, v
+    # fx FAIL -> redesign trigger
+    crafted_fx_fail = [r if r.name != "fx_conversion" else
+                       ProbeResult("fx_conversion", False, {"mean_gap_bps": 12.0},
+                                   "mean gap 12.00bps >= 10.0bps") for r in crafted]
+    vf = verdict(crafted_fx_fail)
+    assert vf["verdict"] == "FAIL" and vf["redesign_required"] is True, vf
+    # gate round-trip
+    write_gate(crafted, v)
+    g = load_gate()
+    assert g and g["verdict"] == "PASS" and gate_is_fresh(g), g
+    assert gate_is_fresh({"timestamp": int(time.time()) - 25 * 3600}) is False  # stale
+    assert load_gate(Path("reports/nope_missing.json")) is None
+    GATE_PATH.unlink(missing_ok=True)  # cleanup
+    print("venue_verify all probes + gate OK")
 
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "run":
-        print("run mode not implemented until Task 4")  # placeholder removed in Task 4
-    else:
-        demo()
+    main()
