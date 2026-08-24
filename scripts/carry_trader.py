@@ -50,13 +50,21 @@ class TraderState:
 
 
 class TiltSignal:
-    """Pluggable directional tilt source (sub-project 2). conviction in [0,1]; 0 = no tilt."""
+    """Pluggable directional tilt source (sub-project 2). conviction in [-1,+1]:
+    +=long perp, -=short perp, 0 = no tilt."""
     async def conviction(self, sample: FeedSample, state: TraderState) -> float:
         return 0.0
 
 
 class NoTilt(TiltSignal):
     pass
+
+
+class TiltRisk:
+    """Pluggable tilt sizing/stop overlay (sub-project 3). Stub returns raw tilt_size."""
+    async def size(self, cfg: dict, conviction_mag: float, sample) -> float:
+        from scripts.risk_budget import tilt_size
+        return tilt_size(cfg["capital"], conviction_mag, cfg["risk_fraction"], cfg["leverage_cap"])
 
 
 async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=False) -> None:
@@ -103,10 +111,12 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
         # tilt: pluggable directional overlay (sub-project 2 supplies real impl)
         tilt = cfg.get("tilt") or NoTilt()
         c = await tilt.conviction(s, state)
-        if c > 0 and state.side == 0:  # only tilt when flat (no stacking on carry)
-            from scripts.risk_budget import tilt_size
-            tqty = tilt_size(cfg["capital"], c, cfg["risk_fraction"], cfg["leverage_cap"]) / s.spot_price
-            log.info("TILT conviction=%.2f qty=%s (stub: no order in paper)", c, tqty)
+        if c != 0 and state.side == 0:  # signed [-1,+1]: only tilt when flat (no stacking)
+            tilt_risk = cfg.get("tilt_risk") or TiltRisk()  # sub-project 3 fills
+            tqty = await tilt_risk.size(cfg, abs(c), s) / s.spot_price
+            direction = "long" if c > 0 else "short"
+            log.info("TILT conviction=%.2f dir=%s qty=%s (stub: no order in paper)",
+                     abs(c), direction, tqty)
             if live and client is not None:
                 # sub-project 2+3 supplies sign + overlay
                 pass
@@ -258,8 +268,16 @@ def demo() -> None:
 
 
 async def _demo_tilt():
+    # NoTilt -> 0.0 (neutral)
     t = NoTilt()
     assert await t.conviction(FeedSample(0, 0, 0, 0, 0, 0), TraderState()) == 0.0
+    # signed contract: a fake long tilt -> positive, a fake short tilt -> negative
+    class FakeTilt(TiltSignal):
+        async def conviction(self, sample, state): return 0.7   # long
+    class FakeShort(TiltSignal):
+        async def conviction(self, sample, state): return -0.5  # short
+    assert await FakeTilt().conviction(FeedSample(0, 0, 0, 0, 0, 0), TraderState()) > 0
+    assert await FakeShort().conviction(FeedSample(0, 0, 0, 0, 0, 0), TraderState()) < 0
     print("carry_trader tilt OK")
 
 
