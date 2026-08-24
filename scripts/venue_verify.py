@@ -11,6 +11,8 @@ Usage: python scripts/venue_verify.py run   (live probes -> reports/venue_verify
 """
 from __future__ import annotations
 
+import csv
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -85,6 +87,83 @@ async def instrument_spot(client) -> ProbeResult:
         return ProbeResult("instrument_spot", False, error=f"{type(e).__name__}: {e}")
 
 
+def _load_venue_csv(sym: str = "BTC", path: Path = REPORTS / "coindcx_venue.csv") -> list[dict]:
+    """Read recorder CSV, filter to sym. path defaults to the real recorder CSV;
+    demo passes a tmp path so it never clobbers real recorder data."""
+    if not path.exists():
+        return []
+    rows = [r for r in csv.DictReader(path.read_text().splitlines()) if r.get("sym") == sym]
+    return rows
+
+
+# --- probe 4: funding accrual (recorder CSV, 60s-polled) ---
+async def funding_accrual(client, csv_path: Path | None = None) -> ProbeResult:
+    rows = _load_venue_csv("BTC", csv_path or REPORTS / "coindcx_venue.csv")
+    if not rows:
+        return ProbeResult("funding_accrual", False, error="coindcx_venue.csv missing/no BTC rows")
+    try:
+        ts = [int(float(r["ts"])) for r in rows if r.get("ts")]
+        span_h = (ts[-1] - ts[0]) / 3600.0 if len(ts) >= 2 else 0.0
+        frs = [float(r["fr"]) for r in rows if r.get("fr") not in ("", None)]
+        present_frac = len(frs) / len(rows) if rows else 0.0
+        mean_abs_fr = statistics.mean(abs(x) for x in frs) if frs else 0.0
+        # Binance proxy ~7%/yr / 1095 8h-intervals ~ 0.0064%/8h
+        detail = {"rows": len(rows), "span_h": round(span_h, 2),
+                  "fr_present_frac": round(present_frac, 3),
+                  "mean_abs_fr_pct": round(mean_abs_fr * 100, 5),
+                  "binance_proxy_pct_per_8h": 0.0064}
+        passed = span_h >= FUNDING_MIN_SPAN_H and present_frac >= 0.9
+        err = None if passed else (
+            f"span {span_h:.1f}h < {FUNDING_MIN_SPAN_H}h" if span_h < FUNDING_MIN_SPAN_H
+            else f"fr present {present_frac:.2f} < 0.9")
+        return ProbeResult("funding_accrual", passed, detail, err)
+    except Exception as e:  # noqa: BLE001
+        return ProbeResult("funding_accrual", False, error=f"{type(e).__name__}: {e}")
+
+
+# --- probe 5: FX conversion gap (§29 crux) ---
+async def fx_conversion(client) -> ProbeResult:
+    import asyncio as _a
+    try:
+        gaps = []
+        for _ in range(FX_SAMPLES):
+            conv = await client.get_conversion_rate()
+            spot = await client.get_usdt_inr()
+            gaps.append(_gap_bps(conv, spot))
+            await _a.sleep(1.0)
+        mean_gap = statistics.mean(gaps)
+        detail = {"mean_gap_bps": round(mean_gap, 3), "samples": FX_SAMPLES,
+                  "threshold_bps": FX_THRESHOLD_BPS, "gaps": [round(g, 3) for g in gaps]}
+        passed = mean_gap < FX_THRESHOLD_BPS
+        return ProbeResult("fx_conversion", passed, detail,
+                           None if passed else f"mean gap {mean_gap:.2f}bps >= {FX_THRESHOLD_BPS}bps")
+    except Exception as e:  # noqa: BLE001
+        return ProbeResult("fx_conversion", False, error=f"{type(e).__name__}: {e}")
+
+
+# --- probe 6: basis proxy (recorder basis_bps column, pre-computed) ---
+async def basis_proxy(client, csv_path: Path | None = None) -> ProbeResult:
+    rows = _load_venue_csv("BTC", csv_path or REPORTS / "coindcx_venue.csv")
+    if not rows:
+        return ProbeResult("basis_proxy", False, error="coindcx_venue.csv missing/no BTC rows")
+    try:
+        bbs = [float(r["basis_bps"]) for r in rows if r.get("basis_bps") not in ("", None)]
+        if not bbs:
+            return ProbeResult("basis_proxy", False, error="no basis_bps values in CSV")
+        med = statistics.median(abs(x) for x in bbs)
+        detail = {"median_abs_basis_bps": round(med, 3), "n": len(bbs),
+                  "threshold_bps": BASIS_THRESHOLD_BPS}
+        passed = med < BASIS_THRESHOLD_BPS
+        return ProbeResult("basis_proxy", passed, detail,
+                           None if passed else f"median |basis| {med:.1f}bps >= {BASIS_THRESHOLD_BPS}bps")
+    except Exception as e:  # noqa: BLE001
+        return ProbeResult("basis_proxy", False, error=f"{type(e).__name__}: {e}")
+
+
+def _gap_bps(conv: float, spot: float) -> float:
+    return abs(conv - spot) / spot * 1e4
+
+
 def demo() -> None:
     import asyncio
 
@@ -109,7 +188,23 @@ def demo() -> None:
     assert not r2b.passed and "fee" in (r2b.error or ""), r2b
     r3 = asyncio.run(instrument_spot(FakeClient()))
     assert r3.passed and r3.detail["last_price"] > 0, r3
-    print("venue_verify probes 1-3 OK")
+    # probe 4 & 6: funding_accrual + basis_proxy on a synthetic CSV in a tmp
+    # dir — NEVER writes reports/coindcx_venue.csv (carry-in guard vs real recorder data).
+    import tempfile
+    tmp_csv = Path(tempfile.mkdtemp()) / "coindcx_venue.csv"
+    # 8h+ of synthetic BTC rows (60s spacing -> 481 rows = 8h), basis_bps=5.0
+    rows_txt = "ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
+    t0 = 1_700_000_000
+    for i in range(481):
+        rows_txt += f"{t0 + i * 60},BTC,0.000064,0.000064,90000000,90000000,8100000,90,5.0\n"
+    tmp_csv.write_text(rows_txt)
+    r4 = asyncio.run(funding_accrual(FakeClient(), csv_path=tmp_csv))
+    assert r4.passed and r4.detail["span_h"] >= 8, r4
+    r6 = asyncio.run(basis_proxy(FakeClient(), csv_path=tmp_csv))
+    assert r6.passed and r6.detail["median_abs_basis_bps"] == 5.0, r6
+    # probe 5: fx_conversion gap math (no network -> test _gap_bps directly)
+    assert abs(_gap_bps(90.05, 90.00) - 5.5556) < 0.01
+    print("venue_verify probes 1-6 OK")
 
 
 if __name__ == "__main__":
