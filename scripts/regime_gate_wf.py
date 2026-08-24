@@ -1,10 +1,12 @@
 """Regime-gate walk-forward sweep engine (sub-project 2). Bar-level path equity
-per cell, real CoinDCX costs, K=4 regime-balanced + 70/30 + bootstrap CI.
+per cell, real CoinDCX costs, K=4 contiguous time-slice folds + 70/30 + bootstrap CI.
 Pass: net>0 both WF schemes AND bootstrap CI lower bound > 0."""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+from scripts.regime_gates import basis_signal, funding_slope_signal, trend_signal
 
 TILT_FEE = 0.00059  # CoinDCX taker per fill (§29; NOT Binance 0.0004)
 TILT_SLIP = 0.0005  # 5bps execution-gap slippage per side (§24/§29 gap model)
@@ -63,7 +65,7 @@ def walk_forward(
     funding_per_bar: pd.Series,
     k: int = 4,
 ) -> dict:
-    """K regime-balanced folds + 70/30. Returns {k4_pass, split70_pass, net, folds_net}.
+    """K contiguous time-slice folds + 70/30. Returns {k4_pass, split70_pass, net, folds_net}.
     k4_pass: net>0 in >=3/4 folds AND aggregate>0. split70_pass: net>0 on last 30%."""
     n = len(conviction)
     fold = max(1, n // k)
@@ -118,6 +120,183 @@ def demo() -> None:
     assert lo > 0, "profitable series CI lower bound > 0"
     print("regime_gate_wf core OK")
 
+    # sweep driver self-check: 3 gates x 1 synthetic asset x 2 dirs = 6 cells
+    cells = run_sweep_synth()
+    assert len(cells) == 6, cells
+    assert all("verdict" in c for c in cells), "each cell has a verdict"
+    # write+read json roundtrip
+    import json
+    import os
+    import tempfile
+
+    p = os.path.join(tempfile.gettempdir(), "_rg_sweep.json")
+    passing = [c for c in cells if c["verdict"] == "PASS"]
+    with open(p, "w") as f:
+        json.dump(passing, f)
+    with open(p) as f:
+        assert json.load(f) == passing
+    os.remove(p)
+    print("regime_gate_wf sweep OK")
+
+
+GATES = {"funding_slope": funding_slope_signal, "trend": trend_signal, "basis": basis_signal}
+ASSETS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+DIRECTIONS = ["long", "short"]
+
+
+def _align_bars(asset: str):
+    """Load 15m perp + spot + funding for asset; mark-only align funding to 15m bars.
+    Returns (perp_ret, funding_per_bar, perp, spot). Missing file -> None.
+
+    Funding settles only at 8h marks; mark-only = rate at the nearest perp bar to each
+    funding timestamp, 0 elsewhere. Forward-filling would charge the 8h rate ~32x per
+    period = 32x overcharge (pre-flight ruling)."""
+    import os
+
+    fp = f"reports/binance_{asset}_15m.csv"
+    sp = f"reports/binance_{asset}_spot_15m.csv"
+    fu = f"reports/binance_{asset}_funding.csv"
+    if not all(os.path.exists(x) for x in (fp, sp, fu)):
+        return None
+    perp = pd.read_csv(fp, index_col=0, parse_dates=True)["close"].astype(float).sort_index()
+    spot = pd.read_csv(sp, index_col=0, parse_dates=True)["close"].astype(float).sort_index()
+    fdf = pd.read_csv(fu, index_col=0)
+    fdf.index = pd.to_datetime(fdf.index, utc=True, errors="coerce")
+    fr = fdf["rate"].astype(float).sort_index()
+    # mark-only: rate at the nearest perp bar to each funding timestamp, 0 elsewhere.
+    funding_per_bar = pd.Series(0.0, index=perp.index)
+    nearest = perp.index.get_indexer(fr.index, method="nearest")  # per-mark bar positions
+    funding_per_bar.iloc[nearest] = fr.values  # last-mark-wins on rare collision (ok at 8h/15m)
+    perp_ret = perp.pct_change().fillna(0.0)
+    return perp_ret, funding_per_bar, perp, spot
+
+
+def _train_params(gate: str, perp_ret, funding_per_bar, perp, spot, is_end: int):
+    """Grid-search best params on first 70% by time (IS net max). Returns dict of params.
+    ponytail: small fixed grid per gate — expand if IS all<=0. Returns best (may be lowest-loss)."""
+    grids = {
+        "funding_slope": [{"w": w, "z": z} for w in (10, 20, 40) for z in (1.0, 2.0, 3.0)],
+        "trend": [{"period": p, "mult": m} for p in (14, 28) for m in (2.0, 3.0)],
+        "basis": [{"w": w, "thr_bps": t} for w in (10, 20) for t in (5.0, 10.0, 20.0)],
+    }
+    best, best_net = None, -np.inf
+    for params in grids[gate]:
+        c = _compute_gate(gate, params, perp, spot, funding_per_bar).iloc[:is_end]
+        eq = simulate_tilt(c, perp_ret.iloc[:is_end], funding_per_bar.iloc[:is_end])
+        net = float(eq.iloc[-1] - 1.0)
+        if net > best_net:
+            best_net, best = net, params
+    return best
+
+
+def _compute_gate(gate: str, params: dict, perp, spot, funding_per_bar) -> pd.Series:
+    if gate == "funding_slope":
+        return funding_slope_signal(pd.DataFrame({"rate": funding_per_bar}), **params)
+    if gate == "trend":
+        return trend_signal(perp, **params)
+    return basis_signal(perp, spot, **params)
+
+
+def run_sweep() -> list[dict]:
+    """18 cells: gate x asset x direction. Train IS 70%, score OOS. Returns per-cell verdicts."""
+    cells = []
+    for asset in ASSETS:
+        loaded = _align_bars(asset)
+        if loaded is None:
+            cells.append({"asset": asset, "gate": "-", "dir": "-", "verdict": "SKIP_NODATA"})
+            continue
+        perp_ret, funding_per_bar, perp, spot = loaded
+        is_end = int(len(perp_ret) * 0.7)
+        for gate in GATES:
+            params = _train_params(gate, perp_ret, funding_per_bar, perp, spot, is_end)
+            conv = _compute_gate(gate, params, perp, spot, funding_per_bar)
+            for direction in DIRECTIONS:
+                # score only the sign-direction: long cell uses conv as-is, short flips sign
+                scored = conv if direction == "long" else -conv
+                wf = walk_forward(scored, perp_ret, funding_per_bar)
+                rets = simulate_tilt(scored, perp_ret, funding_per_bar).pct_change().dropna()
+                lo, _hi = bootstrap_ci(rets)
+                verdict = "PASS" if (wf["k4_pass"] and wf["split70_pass"] and wf["net"] > 0 and lo > 0) else "FAIL"
+                cells.append(
+                    {
+                        "asset": asset,
+                        "gate": gate,
+                        "dir": direction,
+                        "params": params,
+                        "net": round(wf["net"], 4),
+                        "ci_lo": round(lo, 4),
+                        "k4_pass": wf["k4_pass"],
+                        "split70_pass": wf["split70_pass"],
+                        "verdict": verdict,
+                    }
+                )
+    return cells
+
+
+def run_sweep_synth() -> list[dict]:
+    """Tiny synthetic sweep for the self-check (6 cells, 1 asset)."""
+    idx = pd.date_range("2026-01-01", periods=400, freq="15min")
+    perp = pd.Series(np.linspace(100, 130, 400), index=idx)
+    spot = pd.Series(np.full(400, 100.0), index=idx)
+    perp_ret = perp.pct_change().fillna(0)
+    funding_per_bar = pd.Series(0.0001, index=idx)
+    cells = []
+    for gate in ["funding_slope", "trend", "basis"]:
+        params = (
+            {"w": 20, "z": 2.0}
+            if gate == "funding_slope"
+            else {"period": 14, "mult": 3.0}
+            if gate == "trend"
+            else {"w": 20, "thr_bps": 10.0}
+        )
+        conv = _compute_gate(gate, params, perp, spot, funding_per_bar)
+        for direction in DIRECTIONS:
+            scored = conv if direction == "long" else -conv
+            wf = walk_forward(scored, perp_ret, funding_per_bar)
+            rets = simulate_tilt(scored, perp_ret, funding_per_bar).pct_change().dropna()
+            lo, _ = bootstrap_ci(rets)
+            verdict = "PASS" if (wf["k4_pass"] and wf["split70_pass"] and wf["net"] > 0 and lo > 0) else "FAIL"
+            cells.append(
+                {
+                    "asset": "SYNTH",
+                    "gate": gate,
+                    "dir": direction,
+                    "net": round(wf["net"], 4),
+                    "verdict": verdict,
+                }
+            )
+    return cells
+
+
+def main():
+    import json
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    log = logging.getLogger("regime_gate_wf")
+    cells = run_sweep()
+    with open("reports/regime_gate_wf.log", "w") as f:
+        f.write("asset,gate,dir,net,ci_lo,k4,split70,verdict,params\n")
+        f.writelines(
+            f"{c['asset']},{c['gate']},{c['dir']},{c.get('net','-')},"
+            f"{c.get('ci_lo','-')},{c.get('k4_pass','-')},"
+            f"{c.get('split70_pass','-')},{c['verdict']},{c.get('params','-')}\n"
+            for c in cells
+        )
+    passing = [c for c in cells if c["verdict"] == "PASS"]
+    with open("reports/regime_gate_pass.json", "w") as f:
+        json.dump(passing, f, indent=2)
+    log.info("sweep done: %d cells, %d PASS", len(cells), len(passing))
+    for c in passing:
+        log.info("PASS %s", {k: c[k] for k in ("asset", "gate", "dir", "net")})
+    if not passing:
+        log.info("NoTilt — no cell passed; carry-only deploy (~5-6%/yr)")
+
 
 if __name__ == "__main__":
-    demo()
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "run":
+        main()  # real-data sweep -> reports/
+    else:
+        demo()
