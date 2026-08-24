@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
+from scripts.coindcx_venue_recorder import sample as _recorder_sample
+
 log = logging.getLogger("carry_trader")
 REPORTS = Path("reports")
 
@@ -266,6 +268,7 @@ def demo() -> None:
     asyncio.run(_demo_sign())
     asyncio.run(_demo_tilt())
     asyncio.run(_demo_venue_gate())
+    asyncio.run(_demo_feed())
 
 
 async def _demo_tilt():
@@ -321,6 +324,50 @@ async def _demo_venue_gate():
     assert load_gate(path=gate_file) is None, "missing gate should return None"
 
     print("carry_trader venue OK")
+
+
+async def _demo_feed():
+    """REST paper feed reuses recorder.sample(); csv_feed reads the recorder CSV.
+    --feed selection: rest (default) vs csv. Guards empty fr/basis -> None (outage)."""
+    import tempfile
+
+    # REST feed: mocked recorder.sample() -> BTC row -> FeedSample; empty fr -> None.
+    good = [{"ts": 1700000000, "sym": "BTC", "fr": 0.0003, "efr": 0.00031,
+             "mp": 30000, "ls": 30000, "spot_inr": 2700000, "usdtinr": 90,
+             "basis_bps": 11.1}]
+    # ponytail: patch sys.modules[__name__] not `import scripts.carry_trader as ct`:
+    # when run as `python scripts/carry_trader.py`, __main__ and scripts.carry_trader
+    # are distinct module objects; _paper_feed resolves _recorder_sample from its
+    # own module (__main__), so the mock must land there.
+    import sys
+    mod = sys.modules[__name__]
+    orig = mod._recorder_sample
+    mod._recorder_sample = lambda: good
+    try:
+        s = await _paper_feed()
+        assert s is not None and abs(s.fr - 0.0003) < 1e-12 and s.spot_price == 2700000, s
+        # empty fr -> outage (None)
+        mod._recorder_sample = lambda: [{"ts": 1, "sym": "BTC", "fr": None, "efr": None,
+                                         "mp": 1, "ls": 1, "spot_inr": "", "usdtinr": "",
+                                         "basis_bps": ""}]
+        assert await _paper_feed() is None, "empty fr should be outage"
+        # BTC row absent -> None
+        mod._recorder_sample = lambda: [{"ts": 1, "sym": "ETH", "fr": 0.0002, "efr": 0.0002,
+                                         "mp": 1, "ls": 1, "spot_inr": 1, "usdtinr": 1,
+                                         "basis_bps": 0}]
+        assert await _paper_feed() is None, "no BTC row -> None"
+    finally:
+        mod._recorder_sample = orig
+
+    # csv_feed: write a tmp CSV, read last row -> FeedSample; missing -> None.
+    td = Path(tempfile.mkdtemp())
+    csvp = td / "coindcx_venue.csv"
+    csvp.write_text("ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
+                    "1700000060,BTC,0.0004,0.0004,30000,30000,2700000,90,11.0\n")
+    s2 = csv_feed(path=csvp)
+    assert s2 is not None and abs(s2.fr - 0.0004) < 1e-12 and s2.basis_bps == 11.0, s2
+    assert csv_feed(path=td / "nope.csv") is None, "missing CSV -> None"
+    print("carry_trader feed OK")
 
 
 async def _demo_sign():
@@ -380,23 +427,41 @@ async def _demo_reconcile():
     print("carry_trader reconcile OK")
 
 
-async def _paper_feed():
-    await asyncio.sleep(0)  # Task 7 / deploy wires real paper feed
+async def _paper_feed() -> FeedSample | None:
+    """REST paper feed (dev). Reuses coindcx_venue_recorder.sample() (public, no auth).
+    Takes the BTC row -> FeedSample. Empty fr/basis or no BTC row -> None (feed-outage)."""
+    rows = _recorder_sample()
+    for r in rows:
+        if r.get("sym") != "BTC":
+            continue
+        fr = r.get("fr")
+        bb = r.get("basis_bps")
+        sinr = r.get("spot_inr")
+        uinr = r.get("usdtinr")
+        if fr in (None, "") or bb in (None, "") or sinr in (None, "") or uinr in (None, ""):
+            return None
+        return FeedSample(ts=int(r["ts"]), fr=float(fr), efr=float(r.get("efr") or 0.0),
+                          basis_bps=float(bb), spot_price=float(sinr), usdtinr=float(uinr))
+    return None
 
 
-async def _live_feed():
-    # read latest row from reports/coindcx_venue.csv (recorder writes it) -> FeedSample
+def csv_feed(path: Path | None = None) -> FeedSample | None:
+    """CSV paper/live feed (Oracle). Reads the last row of reports/coindcx_venue.csv
+    (recorder writes it 60s-polled) -> FeedSample. Missing/empty -> None (outage)."""
     import csv
-    p = REPORTS / "coindcx_venue.csv"
+    p = path or (REPORTS / "coindcx_venue.csv")
     if not p.exists():
         return None
     rows = list(csv.DictReader(p.read_text().splitlines()))
     if not rows:
         return None
     r = rows[-1]
-    return FeedSample(ts=int(float(r["ts"])), fr=float(r["fr"]), efr=float(r["efr"]),
-                      basis_bps=float(r["basis_bps"]), spot_price=float(r["spot_inr"]),
-                      usdtinr=float(r["usdtinr"]))
+    try:
+        return FeedSample(ts=int(float(r["ts"])), fr=float(r["fr"]), efr=float(r["efr"]),
+                          basis_bps=float(r["basis_bps"]), spot_price=float(r["spot_inr"]),
+                          usdtinr=float(r["usdtinr"]))
+    except (KeyError, ValueError, TypeError):
+        return None
 
 
 def main() -> None:
@@ -408,6 +473,8 @@ def main() -> None:
     ap.add_argument("--pair", default="B-BTC_USDT")
     ap.add_argument("--spot-pair", default="BTCINR")
     ap.add_argument("--leverage", type=int, default=3)
+    ap.add_argument("--feed", choices=["rest", "csv"], default="rest",
+                    help="paper feed source: rest (dev, public REST) or csv (Oracle, recorder CSV)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = {"band": args.band, "capital": args.capital, "stop_fill_est": 0.02,
@@ -435,9 +502,9 @@ def main() -> None:
                   "Re-run: python scripts/venue_verify.py run"); return
         from app.exchange.coindcx import CoinDCXClient
         client = CoinDCXClient()
-        feed_fn = _live_feed
+        feed_fn = csv_feed  # --live forces csv (live runs on Oracle where the CSV exists)
     else:
-        feed_fn = _paper_feed
+        feed_fn = _paper_feed if args.feed == "rest" else csv_feed
     asyncio.run(run_loop(cfg, client=client, feed=feed_fn, live=args.live))
 
 
