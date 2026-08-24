@@ -15,6 +15,7 @@ from scripts.coindcx_venue_recorder import sample as _recorder_sample
 
 log = logging.getLogger("carry_trader")
 REPORTS = Path("reports")
+FUNDING_MARK_S = 8 * 3600  # CoinDCX funding settlement interval (00:00/08:00/16:00 UTC)
 
 
 def decide(rate_history: np.ndarray, band: float, side: int) -> str:
@@ -96,6 +97,9 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
             await asyncio.sleep(cfg.get("poll_s", 60))
             continue
         state.last_feed_ts = s.ts
+        # paper PnL: accrue funding at 8h marks (replaces placeholder equity)
+        if _accrue_funding(state, s):
+            log.info("FUNDING_ACCRUE total=%s fr=%s", state.accrued_funding, s.fr)
         # basis-stop (60s): force flatten on squeeze spike
         if state.side != 0 and s.basis_bps > cfg["basis_stop_bps"]:
             log.warning("basis-stop fire basis=%sbps -> flatten", s.basis_bps)
@@ -150,11 +154,38 @@ def _save_state(path, st: TraderState) -> None:
 
 
 def _mark_equity(st: TraderState, s: FeedSample) -> float:
-    # delta-neutral: perp PnL + spot PnL cancel on price; income = funding accrued (proxy via fr*qty)
-    if st.side == 0: return st.peak_equity
-    # ponytail: placeholder equity (peak + funding proxy); real MTM deferred to Phase 2 live
-    funding = st.qty * s.fr * st.entry_spot
-    return st.peak_equity + funding
+    # paper PnL equity: peak + accrued funding (8h marks) + unrealized basis/FX MTM.
+    # Replaces the sub-project-1 placeholder. Real MTM deferred to Phase 2 live fills in
+    # the perp/spot leg fills; here basis_mtm is the delta-neutral residual (the §29 FX leg).
+    if st.side == 0:
+        return st.peak_equity
+    return st.peak_equity + st.accrued_funding + _basis_mtm(st, s)
+
+
+def _accrue_funding(st: TraderState, s: FeedSample) -> bool:
+    """Accrue carry income at 8h funding marks. First sample seeds last_mark_ts (no accrue).
+    A mark crossing while short -> accrued_funding += qty * fr * entry_spot. No double-accrue
+    within the same mark. Returns True if accrued this call."""
+    if st.side != -1:
+        return False
+    mark = s.ts - (s.ts % FUNDING_MARK_S)
+    if st.last_mark_ts == 0:
+        st.last_mark_ts = mark
+        return False
+    if mark > st.last_mark_ts:
+        # ponytail: on a multi-mark gap (feed outage spanned marks) accrue once at the
+        # resumption fr with the gap absorbed here; run_loop logs a FUNDING_ACCRUE gap flag.
+        st.accrued_funding += st.qty * s.fr * st.entry_spot
+        st.last_mark_ts = mark
+        return True
+    return False
+
+
+def _basis_mtm(st: TraderState, s: FeedSample) -> float:
+    """Unrealized basis/FX MTM on the open delta-neutral position (INR). 0 when flat."""
+    if st.side == 0 or st.qty == 0.0:
+        return 0.0
+    return st.qty * ((s.basis_bps - st.entry_basis_bps) / 1e4) * st.entry_spot
 
 
 async def _enter_short(st, s, client, live, cfg):
@@ -180,7 +211,8 @@ async def _enter_short(st, s, client, live, cfg):
     else:
         st.qty = 0.0
     st.side = -1; st.entry_perp = s.spot_price; st.entry_spot = s.spot_price
-    log.info("ENTER_SHORT qty=%s fr=%s", st.qty, s.fr)
+    st.entry_basis_bps = s.basis_bps; st.peak_equity = st.peak_equity or 0.0
+    log.info("ENTER_SHORT qty=%s fr=%s basis=%sbps", st.qty, s.fr, s.basis_bps)
 
 
 async def _flatten_all(st, client, live, cfg):
@@ -274,6 +306,41 @@ def demo() -> None:
     asyncio.run(_demo_tilt())
     asyncio.run(_demo_venue_gate())
     asyncio.run(_demo_feed())
+    asyncio.run(_demo_paper_pnl())
+
+
+async def _demo_paper_pnl():
+    """8h funding accrual + basis MTM + real mark_equity (replaces placeholder)."""
+    # entry: short 0.1 BTC @ entry_spot 9_000_000, basis 10bps, peak=capital 100k
+    st = TraderState(side=-1, qty=0.1, entry_perp=9_000_000, entry_spot=9_000_000,
+                     peak_equity=100_000.0, entry_basis_bps=10.0, last_mark_ts=0)
+    m0 = 1700000000 - (1700000000 % (8 * 3600))   # current 8h mark floor
+    s_seed = FeedSample(ts=m0 + 60, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=9_000_000, usdtinr=90)
+    # first sample seeds last_mark_ts, no accrue
+    assert _accrue_funding(st, s_seed) is False and st.accrued_funding == 0.0, "seed, no accrue"
+    assert st.last_mark_ts == m0, "last_mark_ts seeded"
+
+    # next mark crossed -> accrue qty*fr*entry_spot = 0.1*0.0003*9_000_000 = 270
+    m1 = m0 + 8 * 3600
+    s_mark = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=9_000_000, usdtinr=90)
+    assert _accrue_funding(st, s_mark) is True, "mark crossed -> accrue"
+    assert abs(st.accrued_funding - 270.0) < 1e-6, st.accrued_funding
+    assert st.last_mark_ts == m1
+
+    # same mark, second sample -> no double accrue
+    assert _accrue_funding(st, FeedSample(ts=m1 + 120, fr=0.0003, efr=0.0003, basis_bps=15,
+                                          spot_price=9_000_000, usdtinr=90)) is False
+    assert abs(st.accrued_funding - 270.0) < 1e-6, "no double accrue within same mark"
+
+    # basis MTM: basis moved 10->15 bps -> qty*(5/1e4)*entry_spot = 0.1*0.0005*9_000_000 = 450
+    assert abs(_basis_mtm(st, s_mark) - 450.0) < 1e-6, _basis_mtm(st, s_mark)
+    # equity = peak + accrued + basis_mtm = 100_000 + 270 + 450 = 100_720
+    assert abs(_mark_equity(st, s_mark) - 100_720.0) < 1e-6, _mark_equity(st, s_mark)
+
+    # flat -> equity is peak only
+    flat = TraderState(side=0, peak_equity=100_000.0)
+    assert _mark_equity(flat, s_mark) == 100_000.0
+    print("carry_trader paper-pnl OK")
 
 
 async def _demo_tilt():
