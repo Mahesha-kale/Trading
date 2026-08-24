@@ -189,7 +189,7 @@ async def run_probes(client) -> list[ProbeResult]:
 def verdict(results: list[ProbeResult]) -> dict:
     all_pass = all(r.passed for r in results)
     fx = next((r for r in results if r.name == "fx_conversion"), None)
-    redesign = bool(fx and not fx.passed and fx.error and "gap" in (fx.error or ""))
+    redesign = bool(fx and not fx.passed and fx.detail.get("mean_gap_bps") is not None)
     fail_reason = None
     if not all_pass:
         fails = [r.name for r in results if not r.passed]
@@ -217,15 +217,19 @@ def write_gate(results: list[ProbeResult], vdict: dict) -> None:
 
 def load_gate(path: Path = GATE_PATH) -> dict | None:
     try:
-        return json.loads(Path(path).read_text())
-    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
+        data = json.loads(Path(path).read_text())
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def gate_is_fresh(gate: dict, freshness_h: float = FRESHNESS_H) -> bool:
-    if not gate or "timestamp" not in gate:
+    if not isinstance(gate, dict) or "timestamp" not in gate:
         return False
-    return (time.time() - float(gate["timestamp"])) / 3600.0 <= freshness_h
+    try:
+        return (time.time() - float(gate["timestamp"])) / 3600.0 <= freshness_h
+    except (TypeError, ValueError):
+        return False
 
 
 async def _run_live() -> None:
