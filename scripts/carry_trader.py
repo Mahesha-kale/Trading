@@ -15,6 +15,7 @@ from scripts.coindcx_venue_recorder import sample as _recorder_sample
 
 log = logging.getLogger("carry_trader")
 REPORTS = Path("reports")
+PAPER_LEDGER = REPORTS / "carry_paper.csv"
 FUNDING_MARK_S = 8 * 3600  # CoinDCX funding settlement interval (00:00/08:00/16:00 UTC)
 
 
@@ -100,9 +101,11 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
         # paper PnL: accrue funding at 8h marks (replaces placeholder equity)
         if _accrue_funding(state, s):
             log.info("FUNDING_ACCRUE total=%s fr=%s", state.accrued_funding, s.fr)
+            if not live: _paper_ledger(state, "FUNDING_ACCRUE", s)
         # basis-stop (60s): force flatten on squeeze spike
         if state.side != 0 and s.basis_bps > cfg["basis_stop_bps"]:
             log.warning("basis-stop fire basis=%sbps -> flatten", s.basis_bps)
+            if not live: _paper_ledger(state, "BASIS_STOP", s)
             await _flatten_all(state, client, live, cfg); continue
         # DD halt
         eq = _mark_equity(state, s)
@@ -110,6 +113,7 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
         from scripts.risk_budget import max_dd_halt
         if max_dd_halt(eq, state.peak_equity, cfg["max_dd"]):
             log.warning("DD halt eq=%.0f peak=%.0f -> flatten+halt", eq, state.peak_equity)
+            if not live: _paper_ledger(state, "DD_HALT", s)
             await _flatten_all(state, client, live, cfg); state.halted = True
             _save_state(state_path, state); break
         # signal
@@ -188,6 +192,27 @@ def _basis_mtm(st: TraderState, s: FeedSample) -> float:
     return st.qty * ((s.basis_bps - st.entry_basis_bps) / 1e4) * st.entry_spot
 
 
+def _paper_ledger(st: TraderState, event: str, s: FeedSample | None,
+                  path: Path = PAPER_LEDGER) -> None:
+    """Append one row to the paper ledger (success-criteria evidence). Best-effort:
+    a write failure must never crash the loop. s=None -> fr/efr/basis blank."""
+    import csv
+    try:
+        new = not path.exists()
+        with open(path, "a", newline="") as f:
+            w = csv.writer(f)
+            if new:
+                w.writerow(["ts", "event", "side", "fr", "efr", "basis_bps",
+                            "accrued_funding", "equity"])
+            w.writerow([int(time.time()), event, st.side,
+                        s.fr if s else "", s.efr if s else "",
+                        s.basis_bps if s else "",
+                        round(st.accrued_funding, 6),
+                        round(_mark_equity(st, s) if s else st.peak_equity, 6)])
+    except OSError as e:  # ledger is observational, never load-bearing
+        log.warning("paper ledger write failed: %s", e)
+
+
 async def _enter_short(st, s, client, live, cfg):
     if live and client is not None:
         from scripts.risk_budget import position_size
@@ -213,6 +238,7 @@ async def _enter_short(st, s, client, live, cfg):
     st.side = -1; st.entry_perp = s.spot_price; st.entry_spot = s.spot_price
     st.entry_basis_bps = s.basis_bps; st.peak_equity = st.peak_equity or 0.0
     log.info("ENTER_SHORT qty=%s fr=%s basis=%sbps", st.qty, s.fr, s.basis_bps)
+    if not live: _paper_ledger(st, "ENTER_SHORT", s)
 
 
 async def _flatten_all(st, client, live, cfg):
@@ -239,6 +265,7 @@ async def _flatten_all(st, client, live, cfg):
         await client.create_spot_order(side="sell", pair=cfg["spot_pair"],
                                         order_type="market_order", quantity=st.qty)
     st.side = 0; log.info("FLATTEN qty=%s", st.qty); st.qty = 0.0
+    if not live: _paper_ledger(st, "FLATTEN", None)
 
 
 async def _on_feed_outage(st, client, live, cfg):
@@ -248,6 +275,7 @@ async def _on_feed_outage(st, client, live, cfg):
     # ponytail: 2 missed polls -> flatten+halt; tune poll_s for longer grace
     if age > 2 * cfg.get("poll_s", 60) * 1000 and st.side != 0:
         log.warning("feed outage %dms -> flatten + halt", age)
+        if not live: _paper_ledger(st, "FEED_OUTAGE", None)
         await _flatten_all(st, client, live, cfg)
         st.halted = True
     return st
@@ -340,6 +368,21 @@ async def _demo_paper_pnl():
     # flat -> equity is peak only
     flat = TraderState(side=0, peak_equity=100_000.0)
     assert _mark_equity(flat, s_mark) == 100_000.0
+
+    # paper ledger: append-only, events recorded, header on new file.
+    import tempfile
+    ld = Path(tempfile.mkdtemp()) / "carry_paper.csv"
+    st2 = TraderState(side=-1, qty=0.1, entry_spot=9_000_000, peak_equity=100_000.0,
+                      entry_basis_bps=10.0, accrued_funding=270.0)
+    samp = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=9_000_000, usdtinr=90)
+    _paper_ledger(st2, "ENTER_SHORT", samp, path=ld)
+    _paper_ledger(st2, "FUNDING_ACCRUE", samp, path=ld)
+    _paper_ledger(st2, "FEED_OUTAGE", None, path=ld)
+    import csv
+    rows = list(csv.DictReader(ld.read_text().splitlines()))
+    assert len(rows) == 3, rows
+    assert rows[0]["event"] == "ENTER_SHORT" and abs(float(rows[0]["accrued_funding"]) - 270.0) < 1e-6
+    assert rows[2]["event"] == "FEED_OUTAGE" and rows[2]["fr"] == "", rows[2]
     print("carry_trader paper-pnl OK")
 
 
