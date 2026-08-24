@@ -48,6 +48,10 @@ class TraderState:
     halted: bool = False
     halted_orphan: bool = False
     last_feed_ts: int = 0
+    accrued_funding: float = 0.0   # paper PnL: cumulative funding income at 8h marks
+    basis_mtm: float = 0.0         # paper PnL: unrealized basis/FX drift on open position
+    last_mark_ts: int = 0          # last 8h funding-mark floor processed (for accrual)
+    entry_basis_bps: float = 0.0   # basis at entry (for MTM)
     corrupt: bool = False  # state.json missing/corrupt at load -> halt, don't guess (SPEC rule 5)
 
 
@@ -135,7 +139,8 @@ def _load_state(path) -> TraderState:
             log.warning("state file corrupt -> flag corrupt")
             st = TraderState(); st.corrupt = True; return st
         d.pop("corrupt", None)  # corrupt is a transient load-time signal; never reload as corrupt
-        return TraderState(**d)
+        valid = {k: v for k, v in d.items() if k in TraderState.__dataclass_fields__}
+        return TraderState(**valid)
     log.warning("state file missing -> flag corrupt")
     st = TraderState(); st.corrupt = True; return st
 
@@ -367,6 +372,23 @@ async def _demo_feed():
     s2 = csv_feed(path=csvp)
     assert s2 is not None and abs(s2.fr - 0.0004) < 1e-12 and s2.basis_bps == 11.0, s2
     assert csv_feed(path=td / "nope.csv") is None, "missing CSV -> None"
+
+    # field-tolerant loader: old state (missing new fields) + unknown keys -> loads with defaults.
+    old = td / "old_state.json"
+    old.write_text(json.dumps({"side": -1, "qty": 0.1, "entry_perp": 100, "entry_spot": 100,
+                               "peak_equity": 100000, "band": 0.0002, "halted": False,
+                               "halted_orphan": False, "last_feed_ts": 1,
+                               "future_unknown_key": "x"}))  # no accrued_funding/etc + unknown key
+    st = _load_state(old)
+    assert st.side == -1 and abs(st.qty - 0.1) < 1e-9, (st.side, st.qty)
+    assert st.accrued_funding == 0.0 and st.basis_mtm == 0.0 and st.last_mark_ts == 0, \
+        "missing fields must default"
+    assert st.entry_basis_bps == 0.0
+    # corrupt JSON -> corrupt flag (existing behavior preserved)
+    bad = td / "bad_state.json"
+    bad.write_text("{not json")
+    stb = _load_state(bad)
+    assert stb.corrupt is True, "corrupt JSON -> corrupt flag"
     print("carry_trader feed OK")
 
 
