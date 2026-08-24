@@ -1,0 +1,18 @@
+[Unit]
+Description=CoinDCX carry paper-trader (Phase 1, --feed csv, no orders)
+After=network-online.target coindcx-venue-recorder.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Trading
+Environment=PYTHONPATH=/home/ubuntu/Trading
+ExecStart=/home/ubuntu/Trading/.venv/bin/python /home/ubuntu/Trading/scripts/carry_trader.py --feed csv --pair B-BTC_USDT --spot-pair BTCINR --leverage 3
+Restart=always
+RestartSec=15
+StandardOutput=append:/var/log/carry-paper.log
+StandardError=append:/var/log/carry-paper.log
+
+[Install]
+WantedBy=multi-user.target
