@@ -99,9 +99,12 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
             continue
         state.last_feed_ts = s.ts
         # paper PnL: accrue funding at 8h marks (replaces placeholder equity)
-        if _accrue_funding(state, s):
-            log.info("FUNDING_ACCRUE total=%s fr=%s", state.accrued_funding, s.fr)
-            if not live: _paper_ledger(state, "FUNDING_ACCRUE", s)
+        marks = _accrue_funding(state, s)
+        if marks:
+            gap = marks > 1
+            log.info("FUNDING_ACCRUE total=%s fr=%s%s", state.accrued_funding, s.fr,
+                     f" gap={marks}marks" if gap else "")
+            if not live: _paper_ledger(state, "FUNDING_ACCRUE_GAP" if gap else "FUNDING_ACCRUE", s)
         # basis-stop (60s): force flatten on squeeze spike
         if state.side != 0 and s.basis_bps > cfg["basis_stop_bps"]:
             log.warning("basis-stop fire basis=%sbps -> flatten", s.basis_bps)
@@ -166,23 +169,24 @@ def _mark_equity(st: TraderState, s: FeedSample) -> float:
     return st.peak_equity + st.accrued_funding + _basis_mtm(st, s)
 
 
-def _accrue_funding(st: TraderState, s: FeedSample) -> bool:
+def _accrue_funding(st: TraderState, s: FeedSample) -> int:
     """Accrue carry income at 8h funding marks. First sample seeds last_mark_ts (no accrue).
-    A mark crossing while short -> accrued_funding += qty * fr * entry_spot. No double-accrue
-    within the same mark. Returns True if accrued this call."""
+    A mark crossing while short -> accrued_funding += qty * fr * entry_spot (ONCE, at the
+    resumption fr — a multi-mark gap under-counts honestly rather than fabricating intermediate
+    rates). Returns marks crossed this call: 0 = none, 1 = normal, >1 = feed gap spanned marks
+    (caller logs a FUNDING_ACCRUE_GAP flag per spec error-handling #3)."""
     if st.side != -1:
-        return False
+        return 0
     mark = s.ts - (s.ts % FUNDING_MARK_S)
     if st.last_mark_ts == 0:
         st.last_mark_ts = mark
-        return False
+        return 0
     if mark > st.last_mark_ts:
-        # ponytail: on a multi-mark gap (feed outage spanned marks) accrue once at the
-        # resumption fr with the gap absorbed here; run_loop logs a FUNDING_ACCRUE gap flag.
+        marks = (mark - st.last_mark_ts) // FUNDING_MARK_S
         st.accrued_funding += st.qty * s.fr * st.entry_spot
         st.last_mark_ts = mark
-        return True
-    return False
+        return marks
+    return 0
 
 
 def _basis_mtm(st: TraderState, s: FeedSample) -> float:
@@ -234,9 +238,13 @@ async def _enter_short(st, s, client, live, cfg):
             st.halted = True; st.halted_orphan = True; st.side = 0; return
         st.qty = qty
     else:
-        st.qty = 0.0
+        # paper: notional qty for PnL accounting. The live guard above prevents the order;
+        # qty=0 would zero accrual/basis_mtm/equity for the whole run (§33.3). Order is
+        # guarded by `live and client is not None`, NOT by qty.
+        from scripts.risk_budget import position_size
+        st.qty = position_size(cfg["capital"], cfg["stop_fill_est"], cfg["risk_fraction"], cfg["leverage_cap"]) / s.spot_price
     st.side = -1; st.entry_perp = s.spot_price; st.entry_spot = s.spot_price
-    st.entry_basis_bps = s.basis_bps; st.peak_equity = st.peak_equity or 0.0
+    st.entry_basis_bps = s.basis_bps; st.peak_equity = st.peak_equity or cfg["capital"]
     log.info("ENTER_SHORT qty=%s fr=%s basis=%sbps", st.qty, s.fr, s.basis_bps)
     if not live: _paper_ledger(st, "ENTER_SHORT", s)
 
@@ -345,20 +353,29 @@ async def _demo_paper_pnl():
     m0 = 1700000000 - (1700000000 % (8 * 3600))   # current 8h mark floor
     s_seed = FeedSample(ts=m0 + 60, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=9_000_000, usdtinr=90)
     # first sample seeds last_mark_ts, no accrue
-    assert _accrue_funding(st, s_seed) is False and st.accrued_funding == 0.0, "seed, no accrue"
+    assert _accrue_funding(st, s_seed) == 0 and st.accrued_funding == 0.0, "seed, no accrue"
     assert st.last_mark_ts == m0, "last_mark_ts seeded"
 
     # next mark crossed -> accrue qty*fr*entry_spot = 0.1*0.0003*9_000_000 = 270
     m1 = m0 + 8 * 3600
     s_mark = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=9_000_000, usdtinr=90)
-    assert _accrue_funding(st, s_mark) is True, "mark crossed -> accrue"
+    assert _accrue_funding(st, s_mark) == 1, "mark crossed -> accrue"
     assert abs(st.accrued_funding - 270.0) < 1e-6, st.accrued_funding
     assert st.last_mark_ts == m1
 
     # same mark, second sample -> no double accrue
     assert _accrue_funding(st, FeedSample(ts=m1 + 120, fr=0.0003, efr=0.0003, basis_bps=15,
-                                          spot_price=9_000_000, usdtinr=90)) is False
+                                          spot_price=9_000_000, usdtinr=90)) == 0
     assert abs(st.accrued_funding - 270.0) < 1e-6, "no double accrue within same mark"
+
+    # multi-mark gap: feed outage spanned 2 marks -> accrue ONCE at resumption fr, return 2.
+    st_gap = TraderState(side=-1, qty=0.1, entry_spot=9_000_000, peak_equity=100_000.0,
+                         entry_basis_bps=10.0, last_mark_ts=m1)
+    m3 = m1 + 2 * 8 * 3600
+    s_gap = FeedSample(ts=m3 + 60, fr=0.0003, efr=0.0003, basis_bps=15,
+                       spot_price=9_000_000, usdtinr=90)
+    assert _accrue_funding(st_gap, s_gap) == 2, "2-mark gap -> return 2"
+    assert abs(st_gap.accrued_funding - 270.0) < 1e-6, "accrue once despite 2-mark gap"
 
     # basis MTM: basis moved 10->15 bps -> qty*(5/1e4)*entry_spot = 0.1*0.0005*9_000_000 = 450
     assert abs(_basis_mtm(st, s_mark) - 450.0) < 1e-6, _basis_mtm(st, s_mark)
@@ -383,6 +400,23 @@ async def _demo_paper_pnl():
     assert len(rows) == 3, rows
     assert rows[0]["event"] == "ENTER_SHORT" and abs(float(rows[0]["accrued_funding"]) - 270.0) < 1e-6
     assert rows[2]["event"] == "FEED_OUTAGE" and rows[2]["fr"] == "", rows[2]
+
+    # paper _enter_short: NOTIONAL qty (not 0) + peak init to capital. Regression guard for
+    # the F1 qty=0.0 zeroing bug. Ledger noop'd here (write path tested above).
+    st_ent = TraderState(side=0, peak_equity=0.0)
+    s_ent = FeedSample(ts=m0 + 60, fr=0.0003, efr=0.0003, basis_bps=10,
+                       spot_price=9_000_000, usdtinr=90)
+    _cfg = {"capital": 100_000, "stop_fill_est": 0.02, "risk_fraction": 0.05,
+            "leverage_cap": 5, "pair": "B-BTC_USDT", "spot_pair": "BTCINR"}
+    _orig_ledger = _paper_ledger
+    globals()["_paper_ledger"] = lambda *a, **k: None
+    try:
+        await _enter_short(st_ent, s_ent, client=None, live=False, cfg=_cfg)
+    finally:
+        globals()["_paper_ledger"] = _orig_ledger
+    assert st_ent.side == -1 and st_ent.qty > 0, (st_ent.side, st_ent.qty)
+    assert abs(st_ent.peak_equity - 100_000.0) < 1e-6, st_ent.peak_equity
+    assert st_ent.entry_basis_bps == 10.0
     print("carry_trader paper-pnl OK")
 
 
