@@ -1911,3 +1911,172 @@ tilt slot stays `NoTilt` (returns conviction 0.0); deploy is carry-only.
 
 See [[funding-carry-band]] (§20), [[carry-funding-regime-walkforward]] (§27),
 [[post-conclusion-followups]] (§29), [[multi-asset-regime-walkforward]] (§19).
+
+## §32. Phase 0 venue-verify — read-only probe harness + FX-conversion gate (sub-project 4)
+
+> §30 built the carry paper-trader; §31 sealed the tilt slot `NoTilt` (0/18
+> regime-gate cells pass); the carry-only deploy (~5-6%/yr, §27) is the single
+> standing edge, still NOT deployed. The §29 post-conclusion followup flagged
+> the carry as "LESS deployable, FX leg": CoinDCX INR-margined perps settle via
+> a platform USDT↔INR *conversion rate* that is NOT spot USDTINR, so the
+> delta-neutral hedge (short perp + long BTCINR spot) leaks FX basis whenever
+> the two diverge. This section logs sub-project 4: a **read-only probe
+> harness** that verifies CoinDCX perp + spot venue truth against the carry
+> deploy's assumptions and gates `carry_trader --live` on a data-driven
+> PASS/FAIL JSON verdict — no manual go/no-go. Spec:
+> `docs/superpowers/specs/2026-08-25-phase0-venue-verify-design.md`; plan:
+> `docs/superpowers/plans/2026-08-25-phase0-venue-verify.md`.
+
+### 32.1 Purpose + read-only constraint
+
+Phase 0 is the systematic re-check of every load-bearing assumption in
+`app/exchange/coindcx.py` (written against docs.coindcx.com 2026-07, every
+such assumption flagged `ponytail: re-check before live money`). It is
+strictly **read-only**: CoinDCX exposes no testnet/sandbox, so the order
+write-path (`create_order` / `exit_position` / `create_spot_order`) cannot be
+verified without real money and is deferred to Phase 2 small-real. Phase 0
+touches public + private read endpoints only — no order is placed, no write
+endpoint is called. The output is a single JSON verdict file that becomes the
+`--live` gate. A valid outcome is either (a) `verdict: PASS` → `--live`
+unlocked for Phase 1 paper / Phase 2 small-real, or (b) `verdict: FAIL` on
+the FX-conversion probe → `--live` stays locked and a hedge-redesign
+sub-project (USDT-margined perp, to kill the FX leg) is mandated before any
+live trade. No human reads-and-decides step — the JSON verdict is the gate.
+
+### 32.2 The probe set (7 read-only probes)
+
+| # | Probe | Source | Verifies | PASS criterion |
+|---|---|---|---|---|
+| 1 | `auth_liveness` | REST private read | HMAC signing works; private endpoints live | `get_wallets()` + `get_positions(pair="B-BTC_USDT")` both 2xx (no `CoinDCXError`) |
+| 2 | `instrument_perp` | `get_instrument("B-BTC_USDT")` | perp metadata vs §29 cost model | taker fee within ±5bps of 0.059%; leverage tier ≥ 3 (our cap); `min_quantity` ≤ typical size; lot/tick parse to floats |
+| 3 | `instrument_spot` | spot metadata / `get_last_price("BTCINR")` | spot hedge-leg metadata | `min_quantity` ≤ hedge size; fee known + recorded; lot parses (falls back to ticker liveness + documented min-qty if no spot-instruments endpoint) |
+| 4 | `funding_accrual` | `reports/coindcx_venue.csv` (recorder, 60s-polled) | the §20 backtest used Binance funding as a PROXY (~7%/yr); Phase 0 confirms real CoinDCX `fr` is accruing + its magnitude | CSV present, BTC rows span ≥8h (≥ one funding cycle), `fr` non-empty for ≥90% of BTC rows; records mean `abs(fr)` vs the Binance proxy (~0.0064%/8h). The 8h *settlement interval* is a CoinDCX venue fact from docs; the recorder's 60s `fr` is the rate-in-force, not a settlement event. |
+| 5 | `fx_conversion` | `get_conversion_rate()` vs `get_usdt_inr()` | **§29 FX-leg crux** — hedge leak | mean `abs(conversion_price − spot_usdtinr) / spot_usdtinr` over N=8 samples (sampled ~1s apart within the single probe run) < 10bps |
+| 6 | `basis_proxy` | recorder `coindcx_venue.csv` `basis_bps` column (pre-computed) | spot-ticker-as-perp-mark proxy (used for sizing + basis-stop) | median `abs(basis_bps)` over the CSV window < 100bps (the `basis_stop` threshold). The recorder pre-computes `basis_bps = (mp / (spot_inr/usdtinr) − 1)*1e4` — this IS the venue finding (USDTINR FX risk the Binance proxy did not carry). A leaky proxy >100bps would mis-trigger the basis-stop and mis-size entries → hard FAIL. |
+| 7 | `rate_limit` | REST (light) | documented 16/s, 960/min | 2 rapid successive reads succeed with no 429; limit recorded. No stress test. |
+
+Probes 1, 2, 3, 5, 7 hit REST; probes 4 and 6 read the recorder CSV
+(`reports/coindcx_venue.csv`). No write endpoint is touched. A probe that
+throws (endpoint down, auth fail, non-JSON) → that probe `pass: false` with
+the error string; the harness continues the other probes and never crashes.
+Missing `coindcx_venue.csv` → probes 4 + 6 FAIL (honest — the recorder is the
+load-bearing source for funding/basis truth); `verdict: FAIL`. Auth FAIL →
+every auth-dependent REST probe FAILs with auth named as root cause.
+
+### 32.3 FX-conversion gate + redesign trigger (the binding decision)
+
+The `fx_conversion` probe is the binding decision of Phase 0. It samples
+`get_conversion_rate()` (the `/api/v1/derivatives/futures/data/conversions`
+endpoint → `conversion_price`) and `get_usdt_inr()` (spot USDTINR ticker) N=8
+times, spaced ~1s apart, computes `gap_bps = abs(conv − spot)/spot * 1e4` per
+sample, takes the mean.
+
+- **PASS:** `mean_gap_bps < 10` → contributes to `verdict: PASS`.
+- **FAIL:** `mean_gap_bps ≥ 10` → `verdict: FAIL`,
+  `redesign_required: true`, JSON `fail_reason` names the FX leg. A follow-up
+  **hedge-redesign sub-project** (switch the carry to a USDT-margined perp so
+  the hedge has no platform-conversion-rate leg) is *mandated*; no live trade
+  until that sub-project ships its own Phase 0 PASS. The redesign is
+  triggered, not built here.
+- **`conversions` endpoint 4xx/5xx:** `fx_conversion` FAIL with `error` set,
+  but `redesign_required: false` (can't-measure ≠ measured-bad);
+  `verdict: FAIL` (can't verify = can't deploy).
+
+The 10bps threshold is conservative: the carry edge is ~500-600bps/yr
+([[funding-carry-band]] §20), so a 10bps persistent leak is < 2% of the edge.
+It is hardcoded, not grid-searched — this is a gate, not a strategy. There is
+no manual go/no-go decision anywhere in the flow: the JSON `verdict` field is
+the gate, and `carry_trader --live` reads it programmatically.
+
+### 32.4 Gate freshness + carry_trader wiring
+
+`carry_trader --live` refuses unless `reports/venue_verify.json`:
+
+1. exists (missing/corrupt → treated as refuse; `load_gate` never raises into
+   the live path),
+2. `verdict == "PASS"`,
+3. `timestamp` within **24h** of now.
+
+Stale or missing → refuse with a message to re-run
+`python scripts/venue_verify.py run`. The 24h window is hardcoded; the
+recorder runs 24/7 on the Oracle Cloud host, so re-verification is cheap and
+there is no reason to deploy on a venue state verified days ago. The guard
+sits in `carry_trader.main()` after the `settings.live` check and before
+`CoinDCXClient` construction — a missing/stale/failing gate never
+instantiates the client, never places an order.
+
+### 32.5 Implementation (`venue_verify.py` + `get_conversion_rate`)
+
+- **`app/exchange/coindcx.py::get_conversion_rate()`** — one new method,
+  signed, endpoint `/api/v1/derivatives/futures/data/conversions`. The
+  load-bearing gotcha: this endpoint takes a **SECONDS** timestamp, not
+  milliseconds like other CoinDCX endpoints. Returns `conversion_price` for
+  `symbol=USDTINR`. This is the one method that enables read-only FX-gap
+  measurement without an open position — before it existed, the gap could
+  only be observed by holding the hedge and watching the P&L leak.
+- **`scripts/venue_verify.py`** — the harness. `PROBES` is the 7 functions
+  above; `run_probes(client)` runs all 7 with per-probe try/except (a probe
+  never crashes the harness); `verdict(results)` returns `PASS` iff all pass,
+  else `FAIL` + `redesign_required` (true iff `fx_conversion` failed on a
+  measured gap) + `fail_reason`. `main()` CLI arg `run` constructs
+  `CoinDCXClient`, runs probes, writes `reports/venue_verify.json`
+  (`{timestamp, verdict, redesign_required, fail_reason, probes[],
+  threshold_bps, freshness_h}`) + a human-readable `venue_verify.log`. No
+  `run` arg → `demo()`: a synthetic `FakeClient` exercises the JSON schema,
+  PASS on good metadata, FAIL on fee mismatch (probe 2), the FX gap math
+  (probe 5), and `redesign_required` set on FX FAIL — no live calls in the
+  self-check. Constants: `FX_THRESHOLD_BPS = 10`, `FRESHNESS_H = 24`,
+  `FX_SAMPLES = 8`, `BASIS_THRESHOLD_BPS = 100`, `FUNDING_MIN_SPAN_H = 8`.
+- **`scripts/carry_trader.py`** — the `--live` guard calls
+  `load_gate()` / `gate_is_fresh()` from `venue_verify`; refusal prints the
+  verdict + re-run instruction and returns (no order, no crash). The 5
+  existing demo OK lines (signal / faults / reconcile / sign / tilt) stay
+  green; a 6th `carry_trader venue OK` line covers the gate.
+- **`tests/test_exchange.py`** — `test_get_conversion_rate_seconds_ts`:
+  mocked httpx response with a seconds-timestamp signed body, asserts it
+  parses `conversion_price` and the request body uses seconds (not ms).
+
+Reused unchanged: `CoinDCXClient` read methods (`get_instrument`,
+`get_usdt_inr`, `get_positions`, `get_wallets`), the recorder's
+`reports/coindcx_venue.csv`, and sub-project 1's fault-handling / reconcile
+logic. The perp carries **no 1% TDS** (TDS is spot-sell only; the perp is
+naked, the spot leg is the hedge and pays TDS on sell — already in the §29
+cost model).
+
+### 32.6 Probe results / status
+
+No live `venue_verify.py run` has been executed in this environment — no API
+keys are present here, and the recorder CSV (`reports/coindcx_venue.csv`) lives
+on the Oracle Cloud host that runs the recorder 24/7
+([[microstructure-feed-unblocked]]). The harness is built and its offline
+`demo()` self-check is green (synthetic `FakeClient` exercises every probe's
+PASS path, the fee-mismatch FAIL path, the FX-gap math, and the
+`redesign_required` trigger; the `carry_trader` demo prints all 6 OK lines
+including `venue OK`). The unit test for `get_conversion_rate` (seconds-ts
+signing + `conversion_price` parse) passes. Phase 0 is therefore
+**awaiting first live run on the recorder host** — pending the first
+`python scripts/venue_verify.py run` there, which will write
+`reports/venue_verify.json` + `reports/venue_verify.log` with the measured FX
+gap, funding-accrual magnitude, and basis-proxy median. The §32 appendix will
+be updated with that table once a live run lands; until then the gate is
+absent and `carry_trader --live` refuses by construction.
+
+### 32.7 Conclusion
+
+Phase 0 venue-verify closes the §29 followup's "LESS deployable, FX leg"
+concern into a data-driven gate. The 7-probe harness is built and self-checked
+offline; the binding decision (FX-conversion gap < 10bps) is a hardcoded gate
+that, on FAIL, auto-triggers a hedge-redesign sub-project rather than asking
+a human to adjudicate. The carry deploy remains NOT deployed — now gated
+behind (a) a live Phase 0 PASS on the recorder host, (b) Phase 1 clean paper
+≥1 week, (c) §27's standing verdict that carry is funding-regime-dependent,
+not a robust edge. The order write-path remains unverified by construction
+(no testnet); Phase 2 small-real is where it first gets exercised against
+real money. Sub-project 4's deliverable is the gate itself; the measured
+venue truth is the next data point, expected from the recorder host.
+
+See [[post-conclusion-followups]] (§29 — the FX-leg crux that motivated this),
+[[funding-carry-band]] (§20 — the carry edge Phase 0 verifies),
+[[carry-funding-regime-walkforward]] (§27 — the standing edge verdict),
+[[microstructure-feed-unblocked]] (the recorder on Oracle Cloud, the CSV
+source for probes 4 + 6).

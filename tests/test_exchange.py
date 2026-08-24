@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 
 import httpx
 
@@ -89,3 +90,28 @@ async def test_create_spot_order_rejects_bad_inputs(monkeypatch):
     ]:
         with pytest.raises(ValueError, match=msg):
             await cli.create_spot_order(**kwargs)
+
+
+async def test_get_conversion_rate_seconds_ts(monkeypatch):
+    _fake_settings(monkeypatch)
+    cli = CoinDCXClient()
+    captured = {}
+
+    async def fake_post(path, *, content=None, headers=None):
+        captured["path"] = path
+        captured["body"] = content
+        captured["headers"] = headers
+        return httpx.Response(200, json=[{"symbol": "USDTINR",
+                "margin_currency_short_name": "INR", "target_currency_short_name": "USDT",
+                "conversion_price": 89.12, "last_updated_at": 1728460492399}])
+
+    monkeypatch.setattr(cli._priv, "post", fake_post)
+    price = await cli.get_conversion_rate()
+    assert abs(price - 89.12) < 1e-9
+    assert captured["path"] == "/api/v1/derivatives/futures/data/conversions"
+    body = json.loads(captured["body"])
+    # SECONDS timestamp (not ms like other endpoints) — the load-bearing gotcha.
+    assert abs(body["timestamp"] - int(time.time())) < 5, "conversion ts must be seconds"
+    assert body["timestamp"] < 1e12, "ms ts would be >1e12"
+    sig = hmac.new(b"s", captured["body"].encode(), hashlib.sha256).hexdigest()
+    assert captured["headers"]["X-AUTH-SIGNATURE"] == sig

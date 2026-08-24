@@ -42,6 +42,9 @@ EP = {
     # Spot order (api.coindcx.com, signed). BTCINR spot leg for the carry hedge.
     # ponytail: path from docs.coindcx.com (2026-07); re-check before live money.
     "spot_create_order": "/exchange/v1/orders/create",
+    # INR-margined futures USDT<>INR conversion rate (read-only, signed).
+    # ponytail: takes a SECONDS timestamp (not ms like other endpoints).
+    "conversions": "/api/v1/derivatives/futures/data/conversions",
 }
 
 # resolution map: our timeframe -> coindcx candle resolution string
@@ -242,6 +245,26 @@ class CoinDCXClient:
         Re-check vs the platform conversion rate before relying on exactness.
         """
         return await self._ticker_price("USDTINR")
+
+    async def get_conversion_rate(self) -> float:
+        """Current USDT<>INR conversion rate for INR-margined futures (read-only,
+        signed). Endpoint /api/v1/derivatives/futures/data/conversions takes a
+        SECONDS timestamp (not ms like other endpoints). Returns conversion_price.
+        This rate is NOT spot USDTINR — the gap is the §29 FX-leg hedge leak."""
+        body = {"timestamp": int(time.time())}  # SECONDS — load-bearing gotcha
+        headers, payload = self._sign(body)
+        async with self._rate_lock:
+            r = await self._priv.post(EP["conversions"], content=payload, headers=headers)
+        data = self._handle(r)
+        rows = data if isinstance(data, list) else [data]
+        for row in rows:
+            if str(row.get("symbol", "")).upper() == "USDTINR":
+                return float(row["conversion_price"])
+        # fallback: first row with a conversion_price
+        for row in rows:
+            if row.get("conversion_price") is not None:
+                return float(row["conversion_price"])
+        raise CoinDCXError("no conversion_price in conversions response", data)
 
     async def get_last_price(self, symbol: str) -> float:
         """Last spot price for symbol from public ticker (no auth).
