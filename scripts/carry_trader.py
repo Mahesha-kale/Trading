@@ -265,6 +265,7 @@ def demo() -> None:
     asyncio.run(_demo_reconcile())
     asyncio.run(_demo_sign())
     asyncio.run(_demo_tilt())
+    asyncio.run(_demo_venue_gate())
 
 
 async def _demo_tilt():
@@ -279,6 +280,47 @@ async def _demo_tilt():
     assert await FakeTilt().conviction(FeedSample(0, 0, 0, 0, 0, 0), TraderState()) > 0
     assert await FakeShort().conviction(FeedSample(0, 0, 0, 0, 0, 0), TraderState()) < 0
     print("carry_trader tilt OK")
+
+
+async def _demo_venue_gate():
+    """Phase 0 gate: --live refuses on missing/stale/FAIL, allows on PASS+fresh.
+
+    Tests the gate helpers directly with tmp JSON files. Cannot drive main()
+    through a monkeypatched load_gate: carry_trader binds the name at import
+    time, so post-import monkeypatch of scripts.venue_verify.load_gate is
+    invisible to carry_trader's bound reference. The production guard in
+    main() is reviewed via diff; this demo exercises the gate LOGIC.
+    """
+    import tempfile
+
+    from scripts.venue_verify import gate_is_fresh, load_gate
+
+    td = Path(tempfile.mkdtemp())
+    gate_file = td / "venue_verify.json"
+    now = int(time.time())
+
+    # PASS + fresh -> would proceed
+    gate_file.write_text(json.dumps({"timestamp": now, "verdict": "PASS"}))
+    g = load_gate(path=gate_file)
+    assert g is not None and g["verdict"] == "PASS" and gate_is_fresh(g), g
+
+    # FAIL (redesign_required) -> refuse
+    gate_file.write_text(json.dumps({"timestamp": now, "verdict": "FAIL",
+                                     "redesign_required": True}))
+    g_fail = load_gate(path=gate_file)
+    assert g_fail is not None and g_fail["verdict"] == "FAIL", g_fail
+
+    # stale (>24h) -> refuse
+    gate_file.write_text(json.dumps({"timestamp": now - 25 * 3600, "verdict": "PASS"}))
+    g_stale = load_gate(path=gate_file)
+    assert g_stale is not None and g_stale["verdict"] == "PASS", g_stale
+    assert not gate_is_fresh(g_stale), "stale gate should be refused"
+
+    # missing -> refuse (load_gate returns None)
+    gate_file.unlink()
+    assert load_gate(path=gate_file) is None, "missing gate should return None"
+
+    print("carry_trader venue OK")
 
 
 async def _demo_sign():
@@ -378,6 +420,19 @@ def main() -> None:
         from app.config import settings
         if not settings.live:
             print("Refusing --live: trading_mode != 'live' in .env"); return
+        # Phase 0 venue gate: refuse --live unless venue_verify.json is PASS + fresh.
+        from scripts.venue_verify import GATE_PATH, gate_is_fresh, load_gate
+        gate = load_gate()
+        if gate is None:
+            print(f"Refusing --live: no venue gate ({GATE_PATH}). "
+                  f"Run: python scripts/venue_verify.py run"); return
+        if gate.get("verdict") != "PASS":
+            print(f"Refusing --live: venue gate verdict={gate.get('verdict')} "
+                  f"({'redesign required' if gate.get('redesign_required') else 'probe(s) failed'}). "
+                  f"Re-run: python scripts/venue_verify.py run"); return
+        if not gate_is_fresh(gate):
+            print("Refusing --live: venue gate stale (>24h). "
+                  "Re-run: python scripts/venue_verify.py run"); return
         from app.exchange.coindcx import CoinDCXClient
         client = CoinDCXClient()
         feed_fn = _live_feed
