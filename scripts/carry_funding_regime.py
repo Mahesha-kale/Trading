@@ -202,8 +202,25 @@ def main():
         negnet = net[neg].sum() * 100
         gate = ("PASS" if posnet > 0 and negnet >= -0.1 else "FAIL")
         print(f"  GATE (profit pos-regime AND no-bleed neg-regime): {gate}  "
-              f"| posNet={posnet:.2f}% negNet={negnet:.2f}%\n")
+              f"| posNet={posnet:.2f}% negNet={negnet:.2f}%")
+        # --- USDT-cost path (redesign component 1): real CoinDCX USDT costs ---
+        # perp maker 0.0236%, spot ~0.199%, 1% TDS on BOTH spot buy + sell.
+        # band `best` is train-selected under §27 costs + reused here to isolate
+        # the cost-model effect (same entry/exit timing, different per-trade costs).
+        net_u, side_u, ent_u, flt_u = carry_oneside_usdt(rate, best)
+        eq_u = np.cumprod(1.0 + net_u)
+        posnet_u = net_u[pos].sum() * 100
+        negnet_u = net_u[neg].sum() * 100
+        gate_u = ("PASS" if posnet_u > 0 and negnet_u >= -0.1 else "FAIL")
+        print(f"  USDT-cost | perp={FEE_PERP:.5f} spot={FEE_SPOT:.5f} "
+              f"TDSbuy={TDS_BUY_USDT} TDSsell={TDS_SELL_USDT}")
+        print(f"  USDT FULL: net={(eq_u[-1]-1)*100:.1f}% entries={ent_u.sum()} "
+              f"flattens={flt_u.sum()} | ~{(eq_u[-1]**(1/yrs)-1)*100 if yrs>0 else 0:.1f}%/yr"
+              f" | sh={metrics(pd.Series(eq_u))['sharpe']}")
+        print(f"  USDT GATE: {gate_u} | posNet={posnet_u:.2f}% negNet={negnet_u:.2f}% "
+              f"(§27 baseline gate was {gate})\n")
 
 
 if __name__ == "__main__":
+    demo()
     main()
