@@ -664,9 +664,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--band", type=float, default=0.0002)
-    ap.add_argument("--capital", type=float, default=100_000.0)
+    ap.add_argument("--capital", type=float, default=1000.0,
+                    help="paper capital in USDT (USDT-margin re-point; was INR)")
     ap.add_argument("--pair", default="B-BTC_USDT")
-    ap.add_argument("--spot-pair", default="BTCINR")
+    ap.add_argument("--spot-pair", default="BTCUSDT")
     ap.add_argument("--leverage", type=int, default=3)
     ap.add_argument("--feed", choices=["rest", "csv"], default="rest",
                     help="paper feed source: rest (dev, public REST) or csv (Oracle, recorder CSV)")
