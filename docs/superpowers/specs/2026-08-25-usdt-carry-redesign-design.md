@@ -69,6 +69,9 @@ The fx_conversion probe measured the INR-margin leak; for the USDT path there is
 - `instrument_perp` leverage: read `max_leverage_short` (the instrument exposes it as 20, not under `leverage`) — minor improvement to the probe (currently treats null as not-exposed; can now verify ≥ cap informatively).
 - Verdict logic: USDT path PASS = 6 probes + USDT-wallet-live. `redesign_required` stays False for USDT path (no FX leg).
 
+**Recorded outcome (2026-08-25, commit `aed552c`, branch `usdt-carry-redesign`):**
+Code complete + live run on Oracle box (`venue_verify.py run --margin usdt`). 6 venue probes PASS: auth ok; perp fee 5.9 bps (leverage null = not exposed by the instrument endpoint, set per-position — unchanged from prior verdict); BTCUSDT spot ticker 79283.99; funding-accrual 43.61h span / 2613 rows / fr-present 1.0; basis-proxy median 20.06 bps; rate-limit ok. `usdt_wallet` FAIL: no USDT wallet → "fund USDT futures margin via account UI (not API)". Gate verdict FAIL, `redesign_required=False`, `margin=usdt`. The FAIL is the expected blocker — funding the USDT futures margin wallet is an account/UI action only the user can do (not API), and is exactly what the gate is designed to require before Phase 2. NOT a code bug. Spot fee 0.169% remains doc-derived (no public fee endpoint); confirmed via real fill deferred to Phase 2. The `instrument_perp` `max_leverage_short` improvement was not needed — the endpoint exposes leverage as null (set per-position via `update_leverage`), so the existing null-tolerant check stands. **Proceed to component 4** once the user funds the USDT wallet → re-run → fresh USDT PASS + paper_check clean ≥7d.
+
 ### 4. Phase 2 small-real — gated
 
 Conditional on components 1-3 + the user funding a USDT futures margin wallet (account action, UI — cannot be done via API).
