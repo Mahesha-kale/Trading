@@ -407,7 +407,7 @@ def main(extreme: bool = False) -> None:
     for c in passing:
         log.info("PASS %s", {k: c[k] for k in ("asset", "gate", "dir", "net")})
     if not passing:
-        log.info("NoTilt — no %s cell passed; carry-only deploy (~5-6%/yr)", label)
+        log.info("NoTilt — no %s cell passed; carry-only deploy (~5-6%%/yr)", label)
 
 
 if __name__ == "__main__":
