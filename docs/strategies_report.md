@@ -2227,3 +2227,90 @@ validates), [[post-conclusion-followups]] (§29 — FX-leg + cost model), §32
 (the Phase 0 gate run on the same host), [[microstructure-feed-unblocked]]
 (the Oracle recorder host Phase 1 deploys alongside),
 [[regime-gate-tilt-sweep]] (§31 — NoTilt sealed).
+
+## §34. Funding-extreme fade tilt sweep — 0/6 cells pass; tilt class closes negative (sub-project 6)
+
+> §31 swept 3 regime gates × 3 assets × 2 directions = 0/18 pass → `NoTilt`.
+> This section logs sub-project 6: one NEW tilt signal — a low-frequency
+> funding-extreme fade (rolling-quantile decile gate + hysteresis) that targets
+> §31's funding-slope churn failure (~10k flips → few). Spec:
+> `docs/superpowers/specs/2026-08-25-tilt-funding-extreme-design.md`; plan:
+> `docs/superpowers/plans/2026-08-25-tilt-funding-extreme.md`.
+
+### 34.1 Thesis
+
+Funding-rate extremes mean-revert. Fade them on the funding-receiving side:
+extreme-positive `fr` → SHORT (short receives funding + perp-spot premium
+reverts down); extreme-negative `fr` → LONG (long receives funding + premium
+reverts up). Funding income aligns with the fade — stronger than a pure
+directional bet. Named failure mode: the §27 squeeze risk (extremes persist).
+
+### 34.2 Sweep structure + pass criterion
+
+1 gate (`funding_extreme`) × 3 assets (BTC/ETH/SOL) × 2 fade-directions
+(long-fade, short-fade) = 6 cells. Same pre-registered pass criterion as §31:
+net>0 AND K=4 contiguous WF (≥3/4 folds + aggregate) AND 70/30 AND bootstrap
+CI lower bound >0 (1000 resample, block=10, seed 0). Cost model §29: taker
+0.059% + 5bps/side, funding mark-aligned, no TDS (naked perp). Params trained
+IS 70%. §31's 18 cells not re-run.
+
+### 34.3 Per-cell verdict table
+
+From `reports/regime_gate_wf.log` (6 rows, appended 2026-08-25):
+
+| asset | gate | dir | net | ci_lo | k4 | split70 | verdict | params |
+|---|---|---|---|---|---|---|---|---|
+| BTCUSDT | funding_extreme | long | 0.2832 | -0.1962 | True | False | FAIL | `{'w': 480, 'q': 0.9, 'q_exit': 0.8}` |
+| BTCUSDT | funding_extreme | short | -0.7734 | -2.7387 | False | True | FAIL | `{'w': 480, 'q': 0.9, 'q_exit': 0.8}` |
+| ETHUSDT | funding_extreme | long | 0.2683 | -0.4204 | True | False | FAIL | `{'w': 480, 'q': 0.9, 'q_exit': 0.8}` |
+| ETHUSDT | funding_extreme | short | -0.5907 | -2.4017 | False | False | FAIL | `{'w': 480, 'q': 0.9, 'q_exit': 0.8}` |
+| SOLUSDT | funding_extreme | long | -0.0015 | -1.0622 | False | True | FAIL | `{'w': 120, 'q': 0.9, 'q_exit': 0.8}` |
+| SOLUSDT | funding_extreme | short | -0.9737 | -5.4918 | False | True | FAIL | `{'w': 120, 'q': 0.9, 'q_exit': 0.8}` |
+
+`reports/regime_gate_pass.json` = `[]`.
+
+### 34.4 Results narrative
+
+All 6 cells FAIL → `reports/regime_gate_pass.json` is `[]` →
+`load_tilt_signal()` returns `NoTilt` (unchanged from §31).
+
+**Long-fade (3 cells, BTC/ETH/SOL, extreme-negative funding → LONG):** the
+thesis works *weakly* in-sample on BTC and ETH — net +0.2832 / +0.2683 and
+K=4 passes (≥3/4 folds + aggregate net > 0). But both fail the 70/30 split
+(train captures the few extreme-negative reversion events, test doesn't) and
+the bootstrap CI lower bound is negative (`-0.1962` / `-0.4204`) — the edge is
+path-lucky, not robust. SOL long-fade is flat (`net=-0.0015`, K=4 fails,
+split70 passes trivially on a near-zero series, `ci_lo=-1.0622`). The
+funding-receive income + premium reversion is real but small, and it
+concentrates in a few IS windows that the 70/30 split + bootstrap correctly
+flag as not repeatable.
+
+**Short-fade (3 cells, extreme-positive funding → SHORT):** uniformly negative
+net (`-0.7734` / `-0.5907` / `-0.9737`) with deeply negative bootstrap ci_lo
+(`-2.4` to `-5.5`). This is the §27 squeeze risk surfacing in the data:
+extreme-positive funding **persists** during sustained squeezes, so the short
+pays the directional leg while the funding income received doesn't cover it.
+2/3 short cells pass split70 (BTC, SOL) — but only because both train and test
+slices lose together; passing split70 on a uniformly-losing cell is not edge.
+
+**Churn-fix verdict:** the hysteresis (`q=0.90` enter, `q_exit=0.80` exit) +
+long window (`W=480` marks ≈ 160d for BTC/ETH; `W=120` ≈ 40d for SOL) DID fix
+the §31 funding-slope churn failure — flip count dropped from ~10,105 to few.
+Low frequency alone does not manufacture edge: the few fires don't overcome
+cost on the short side (squeeze persists) and don't repeat OOS on the long
+side (path-luck). The churn fix was necessary but not sufficient.
+
+### 34.5 Conclusion
+
+0/6 cells pass → the tilt class **closes negative** (like the order-flow class
+§25/§26). `NoTilt` stands; the carry-only deploy (~5-6%/yr §27, USDT redesign
+§29) remains the single standing edge. Consistent with §28 (no robust retail
+perp edge at free-data resolution). The §30 paper-trader tilt slot stays
+`NoTilt`. A second, structurally different funding tilt (level-quantile fade
+vs §31's slope) also failing — with the churn failure explicitly fixed —
+strengthens the §31 verdict from "sealed NoTilt on the gates tested" to "the
+tilt class closes negative: no free-data funding signal, slope OR level,
+survives real costs + path-luck guards."
+
+See [[regime-gate-tilt-sweep]] (§31), [[funding-carry-band]] (§20),
+[[carry-funding-regime-walkforward]] (§27/§28).

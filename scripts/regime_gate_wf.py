@@ -6,7 +6,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from scripts.regime_gates import basis_signal, funding_slope_signal, trend_signal
+from scripts.regime_gates import (
+    basis_signal,
+    funding_extreme_signal,
+    funding_slope_signal,
+    trend_signal,
+)
 
 TILT_FEE = 0.00059  # CoinDCX taker per fill (§29; NOT Binance 0.0004)
 TILT_SLIP = 0.0005  # 5bps execution-gap slippage per side (§24/§29 gap model)
@@ -138,8 +143,20 @@ def demo() -> None:
     os.remove(p)
     print("regime_gate_wf sweep OK")
 
+    # sub-project 6: funding-extreme focused sweep self-check
+    ec = run_sweep_extreme_synth()
+    assert len(ec) == 2, ec
+    assert all("verdict" in c for c in ec), ec
+    # both fade directions actually fire (not all-flat) and costs apply (net < gross)
+    assert all(c["scored_fires"] > 0 for c in ec), "fade cells must fire on the synthetic extremes"
+    # a deliberately-profitable fade should net positive on the SYNTH (k4+split70 may
+    # still trip on tiny synthetic data — assert at least one direction nets >0 to
+    # confirm the sim rewards the fade, not that it must PASS the full gate)
+    assert any(c["net"] > 0 for c in ec), f"profitable synth fade should net >0, got {ec}"
 
-GATES = {"funding_slope": funding_slope_signal, "trend": trend_signal, "basis": basis_signal}
+
+GATES = {"funding_slope": funding_slope_signal, "trend": trend_signal, "basis": basis_signal,
+         "funding_extreme": funding_extreme_signal}
 ASSETS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 DIRECTIONS = ["long", "short"]
 
@@ -178,6 +195,8 @@ def _train_params(gate: str, perp_ret, funding_per_bar, perp, spot, is_end: int)
         "funding_slope": [{"w": w, "z": z} for w in (10, 20, 40) for z in (1.0, 2.0, 3.0)],
         "trend": [{"period": p, "mult": m} for p in (14, 28) for m in (2.0, 3.0)],
         "basis": [{"w": w, "thr_bps": t} for w in (10, 20) for t in (5.0, 10.0, 20.0)],
+        "funding_extreme": [{"w": w, "q": q, "q_exit": q - 0.10}
+                            for w in (120, 240, 480) for q in (0.90, 0.95)],
     }
     best, best_net = None, -np.inf
     for params in grids[gate]:
@@ -192,6 +211,8 @@ def _train_params(gate: str, perp_ret, funding_per_bar, perp, spot, is_end: int)
 def _compute_gate(gate: str, params: dict, perp, spot, funding_per_bar) -> pd.Series:
     if gate == "funding_slope":
         return funding_slope_signal(pd.DataFrame({"rate": funding_per_bar}), **params)
+    if gate == "funding_extreme":
+        return funding_extreme_signal(pd.DataFrame({"rate": funding_per_bar}), **params)
     if gate == "trend":
         return trend_signal(perp, **params)
     return basis_signal(perp, spot, **params)
@@ -233,6 +254,47 @@ def run_sweep() -> list[dict]:
     return cells
 
 
+def run_sweep_funding_extreme() -> list[dict]:
+    """6 cells: funding_extreme gate x 3 assets x 2 fade-directions. Train IS 70%
+    on the raw two-sided conviction, then score each fade-direction by sign-
+    isolating it (clip) — the fade gate fires both signs natively, so a direction
+    cell keeps only its sign (long-fade: conv>=0; short-fade: conv<=0). §31's
+    sign-flip does not apply. Reuses _align_bars/_train_params/_compute_gate/
+    simulate_tilt/walk_forward/bootstrap_ci. §31's 18 cells are NOT re-run."""
+    cells = []
+    for asset in ASSETS:
+        loaded = _align_bars(asset)
+        if loaded is None:
+            cells.append({"asset": asset, "gate": "funding_extreme", "dir": "-",
+                          "verdict": "SKIP_NODATA"})
+            continue
+        perp_ret, funding_per_bar, perp, spot = loaded
+        is_end = int(len(perp_ret) * 0.7)
+        params = _train_params("funding_extreme", perp_ret, funding_per_bar, perp, spot, is_end)
+        conv = _compute_gate("funding_extreme", params, perp, spot, funding_per_bar)
+        for direction in DIRECTIONS:
+            # sign-isolate: long-fade keeps +1 fires (clip lower 0); short-fade keeps -1 fires (clip upper 0)
+            scored = conv.clip(lower=0.0) if direction == "long" else conv.clip(upper=0.0)
+            wf = walk_forward(scored, perp_ret, funding_per_bar)
+            rets = simulate_tilt(scored, perp_ret, funding_per_bar).pct_change().dropna()
+            lo, _hi = bootstrap_ci(rets)
+            verdict = "PASS" if (wf["k4_pass"] and wf["split70_pass"] and wf["net"] > 0 and lo > 0) else "FAIL"
+            cells.append(
+                {
+                    "asset": asset,
+                    "gate": "funding_extreme",
+                    "dir": direction,
+                    "params": params,
+                    "net": round(wf["net"], 4),
+                    "ci_lo": round(lo, 4),
+                    "k4_pass": wf["k4_pass"],
+                    "split70_pass": wf["split70_pass"],
+                    "verdict": verdict,
+                }
+            )
+    return cells
+
+
 def run_sweep_synth() -> list[dict]:
     """Tiny synthetic sweep for the self-check (6 cells, 1 asset)."""
     idx = pd.date_range("2026-01-01", periods=400, freq="15min")
@@ -268,35 +330,92 @@ def run_sweep_synth() -> list[dict]:
     return cells
 
 
-def main():
+def run_sweep_extreme_synth() -> list[dict]:
+    """Tiny synthetic funding-extreme sweep for the self-check: 1 asset x 2 dirs.
+    A deliberately-profitable fade cell (funding mean-reverts) should PASS; a
+    flat cell (no extremes -> no fires) should FAIL; equity < gross (costs)."""
+    idx = pd.date_range("2026-01-01", periods=600, freq="15min")
+    # funding: oscillating extremes that revert — a fade profits (short pos extreme,
+    # long neg extreme) AND earns funding on the receiving side.
+    n = 600
+    fr = np.full(n, 0.0001)
+    for ix in range(60, n, 120):  # positive extreme (2 bars) then reverts
+        fr[ix : ix + 2] = 0.002
+    for ix in range(120, n, 120):  # negative extreme (2 bars) then reverts
+        fr[ix : ix + 2] = -0.002
+    funding_per_bar = pd.Series(fr, index=idx)
+    # perp returns: after a positive funding extreme, perp drifts DOWN (premium
+    # reverts) -> short fade profits; after a negative extreme, perp drifts UP.
+    perp_ret = pd.Series(0.0, index=idx)
+    for ix in range(60, n, 120):
+        perp_ret.iloc[ix + 1 : ix + 6] = -0.001  # short fade wins here
+    for ix in range(120, n, 120):
+        perp_ret.iloc[ix + 1 : ix + 6] = 0.001   # long fade wins here
+    cells = []
+    # profitable long-fade cell (params that fire on the neg extremes)
+    for direction, params in (("long", {"w": 120, "q": 0.90, "q_exit": 0.80}),
+                              ("short", {"w": 120, "q": 0.90, "q_exit": 0.80})):
+        conv = funding_extreme_signal(pd.DataFrame({"rate": funding_per_bar}), **params)
+        scored = conv.clip(lower=0.0) if direction == "long" else conv.clip(upper=0.0)
+        wf = walk_forward(scored, perp_ret, funding_per_bar)
+        rets = simulate_tilt(scored, perp_ret, funding_per_bar).pct_change().dropna()
+        lo, _ = bootstrap_ci(rets)
+        verdict = "PASS" if (wf["k4_pass"] and wf["split70_pass"] and wf["net"] > 0 and lo > 0) else "FAIL"
+        cells.append({"asset": "SYNTH", "gate": "funding_extreme", "dir": direction,
+                      "net": round(wf["net"], 4), "verdict": verdict, "scored_fires": int((scored != 0).sum())})
+    return cells
+
+
+def main(extreme: bool = False) -> None:
+    """Run the sweep + write reports/regime_gate_wf.log + regime_gate_pass.json.
+    extreme=False: §31 18-cell sweep (overwrites). extreme=True: sub-project 6
+    funding-extreme 6-cell sweep (APPENDS to the log; overwrites the pass json
+    with the 6-cell passing set — §31 was 0/18=[] so nothing is lost)."""
     import json
     import logging
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log = logging.getLogger("regime_gate_wf")
-    cells = run_sweep()
-    with open("reports/regime_gate_wf.log", "w") as f:
-        f.write("asset,gate,dir,net,ci_lo,k4,split70,verdict,params\n")
-        f.writelines(
-            f"{c['asset']},{c['gate']},{c['dir']},{c.get('net','-')},"
-            f"{c.get('ci_lo','-')},{c.get('k4_pass','-')},"
-            f"{c.get('split70_pass','-')},{c['verdict']},{c.get('params','-')}\n"
-            for c in cells
-        )
+    cells = run_sweep_funding_extreme() if extreme else run_sweep()
     passing = [c for c in cells if c["verdict"] == "PASS"]
+    if extreme:
+        # APPEND the 6 funding-extreme rows to the existing §31 log (header only if new)
+        import os
+        new = not os.path.exists("reports/regime_gate_wf.log")
+        with open("reports/regime_gate_wf.log", "a") as f:
+            if new:
+                f.write("asset,gate,dir,net,ci_lo,k4,split70,verdict,params\n")
+            f.writelines(
+                f"{c['asset']},{c['gate']},{c['dir']},{c.get('net','-')},"
+                f"{c.get('ci_lo','-')},{c.get('k4_pass','-')},"
+                f"{c.get('split70_pass','-')},{c['verdict']},{c.get('params','-')}\n"
+                for c in cells
+            )
+    else:
+        with open("reports/regime_gate_wf.log", "w") as f:
+            f.write("asset,gate,dir,net,ci_lo,k4,split70,verdict,params\n")
+            f.writelines(
+                f"{c['asset']},{c['gate']},{c['dir']},{c.get('net','-')},"
+                f"{c.get('ci_lo','-')},{c.get('k4_pass','-')},"
+                f"{c.get('split70_pass','-')},{c['verdict']},{c.get('params','-')}\n"
+                for c in cells
+            )
     with open("reports/regime_gate_pass.json", "w") as f:
         json.dump(passing, f, indent=2)
-    log.info("sweep done: %d cells, %d PASS", len(cells), len(passing))
+    label = "funding-extreme" if extreme else "regime-gate"
+    log.info("%s sweep done: %d cells, %d PASS", label, len(cells), len(passing))
     for c in passing:
         log.info("PASS %s", {k: c[k] for k in ("asset", "gate", "dir", "net")})
     if not passing:
-        log.info("NoTilt — no cell passed; carry-only deploy (~5-6%/yr)")
+        log.info("NoTilt — no %s cell passed; carry-only deploy (~5-6%%/yr)", label)
 
 
 if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1 and sys.argv[1] == "run":
-        main()  # real-data sweep -> reports/
+        main()  # §31 18-cell sweep (frozen) -> reports/
+    elif len(sys.argv) > 1 and sys.argv[1] == "run-extreme":
+        main(extreme=True)  # sub-project 6: 6 funding-extreme cells -> reports/
     else:
         demo()
