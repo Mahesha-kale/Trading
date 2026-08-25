@@ -3,7 +3,10 @@
 Reads reports/carry_paper.csv + reports/carry_trader_state.json and emits the
 5-criteria verdict that gates Phase 2 small-real. See spec §"Success criteria".
 
-Usage: python scripts/paper_check.py [ledger_csv] [state_json] [capital] [window_d]
+Usage:
+  python scripts/paper_check.py            # demo self-check
+  python scripts/paper_check.py run        # real verdict on default reports paths
+  python scripts/paper_check.py [ledger_csv] [state_json] [capital] [window_d]
 """
 from __future__ import annotations
 
@@ -91,4 +94,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    demo()
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "run":
+        # real verdict on default reports paths (matches regime_gate_wf `run`)
+        sys.argv = [sys.argv[0]]
+        main()
+    elif len(sys.argv) > 1:
+        main()  # positional: [ledger_csv] [state_json] [capital] [window_d]
+    else:
+        demo()
