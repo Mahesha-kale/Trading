@@ -37,6 +37,19 @@ Modify `carry_oneside` to charge TDS on the **entry spot BUY** as well as the ex
 - **FAIL:** edge killed by the entry TDS. → redesign ends here (option C, abandon). No paper-trader re-point, no Phase 2. Report + update §29/§33.
 - **Output:** a `__main__` demo asserting the re-scored result + a printed comparison to the §27 baseline. Commit the cost-model variant (do not overwrite §27's sell-only result — add a USDT-cost path).
 
+**Recorded outcome (2026-08-25, commits `e48c020` + `fff9405`, branch `usdt-carry-redesign`):**
+Re-scored 2023-01-01..2026-07-31 (3924 8h-marks), band reused from §27 train-select to isolate the cost-model effect.
+
+| symbol | §27 baseline %/yr | USDT %/yr | §27 negNet | USDT negNet | §27 gate | USDT gate | entries/flattens |
+|---|---|---|---|---|---|---|---|
+| BTCUSDT | 7.5 | 7.1 | -0.47% | -0.47% | FAIL | FAIL | 1 / 0 |
+| ETHUSDT | 7.2 | 6.8 | -1.17% | -1.37% | FAIL | FAIL | 1 / 1 |
+| SOLUSDT | 4.6 | 3.8 | -2.55% | -2.75% | FAIL | FAIL | 2 / 2 |
+
+- **USDT-cost gate (the redesign's question): PASS.** The 2% spot TDS does NOT kill the edge — annualized stays positive (~7%/yr BTC/ETH, ~4%/yr SOL), dented only ~0.4-0.8%/yr. The strategy rarely trades (1-2 entries, 0-2 flattens over 3.7yr), so the 1.22% entry buy-TDS amortizes to ~0.33%/yr and the sell-TDS only hits on the rare flatten. The 250 bps INR-FX leak is dodged; USDT margin is NOT cost-refuted.
+- **Strict §27 no-bleed-neg gate: FAIL — pre-existing + cost-independent.** Carry holds the short perp through negative-funding regimes and bleeds -0.5% to -2.5% (neg regime has 0 flips → pure funding bleed, no costs). This is the §27/§28 finding ("carry bleeds small, NOT flat in neg funding; NOT a robust edge, watchlist"), NOT a USDT-cost effect — §27 baseline fails the same gate.
+- **Ruling:** the spec's defined FAIL is "edge killed by the entry TDS" — that did not happen. The edge survives USDT real costs. The neg-bleed is the known §28 caveat (already accepted when carry was placed on watchlist + the redesign pursued). **Proceed to component 2** (paper-trader re-point) carrying the §28 caveat forward: the paper-trader will surface the neg-bleed live, and the deployment bar stays high. The redesign's cheap kill-check (component 1's purpose) is satisfied.
+
 ### 2. Paper-trader re-point — `scripts/carry_trader.py` (+ feed)
 
 Re-point the deployed paper-trader from INR-margin/BTCINR to USDT-margin/BTCUSDT. Conditional on component 1 PASS.
