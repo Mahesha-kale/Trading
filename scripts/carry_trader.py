@@ -35,7 +35,7 @@ class FeedSample:
     fr: float           # current funding rate
     efr: float          # next funding rate
     basis_bps: float    # perp mark vs synthetic spot
-    spot_price: float   # BTCINR spot
+    spot_price: float   # BTCUSDT spot (= spot_inr/usdtinr)
     usdtinr: float
 
 
@@ -161,9 +161,9 @@ def _save_state(path, st: TraderState) -> None:
 
 
 def _mark_equity(st: TraderState, s: FeedSample) -> float:
-    # paper PnL equity: peak + accrued funding (8h marks) + unrealized basis/FX MTM.
-    # Replaces the sub-project-1 placeholder. Real MTM deferred to Phase 2 live fills in
-    # the perp/spot leg fills; here basis_mtm is the delta-neutral residual (the §29 FX leg).
+    # paper PnL equity (USDT): peak + accrued funding (8h marks) + unrealized basis
+    # MTM. USDT structure has NO §29 FX leg (no INR conversion); basis_mtm is the
+    # pure perp-vs-BTCUSDT-spot basis residual. Real MTM deferred to Phase 2 live fills.
     if st.side == 0:
         return st.peak_equity
     return st.peak_equity + st.accrued_funding + _basis_mtm(st, s)
@@ -190,7 +190,7 @@ def _accrue_funding(st: TraderState, s: FeedSample) -> int:
 
 
 def _basis_mtm(st: TraderState, s: FeedSample) -> float:
-    """Unrealized basis/FX MTM on the open delta-neutral position (INR). 0 when flat."""
+    """Unrealized basis MTM on the open delta-neutral position (USDT). 0 when flat."""
     if st.side == 0 or st.qty == 0.0:
         return 0.0
     return st.qty * ((s.basis_bps - st.entry_basis_bps) / 1e4) * st.entry_spot
@@ -347,40 +347,40 @@ def demo() -> None:
 
 async def _demo_paper_pnl():
     """8h funding accrual + basis MTM + real mark_equity (replaces placeholder)."""
-    # entry: short 0.1 BTC @ entry_spot 9_000_000, basis 10bps, peak=capital 100k
-    st = TraderState(side=-1, qty=0.1, entry_perp=9_000_000, entry_spot=9_000_000,
+    # entry: short 0.1 BTC @ entry_spot 100_000, basis 10bps, peak=capital 100k
+    st = TraderState(side=-1, qty=0.1, entry_perp=100_000, entry_spot=100_000,
                      peak_equity=100_000.0, entry_basis_bps=10.0, last_mark_ts=0)
     m0 = 1700000000 - (1700000000 % (8 * 3600))   # current 8h mark floor
-    s_seed = FeedSample(ts=m0 + 60, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=9_000_000, usdtinr=90)
+    s_seed = FeedSample(ts=m0 + 60, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=100_000, usdtinr=90)
     # first sample seeds last_mark_ts, no accrue
     assert _accrue_funding(st, s_seed) == 0 and st.accrued_funding == 0.0, "seed, no accrue"
     assert st.last_mark_ts == m0, "last_mark_ts seeded"
 
-    # next mark crossed -> accrue qty*fr*entry_spot = 0.1*0.0003*9_000_000 = 270
+    # next mark crossed -> accrue qty*fr*entry_spot = 0.1*0.0003*100_000 = 270
     m1 = m0 + 8 * 3600
-    s_mark = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=9_000_000, usdtinr=90)
+    s_mark = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=100_000, usdtinr=90)
     assert _accrue_funding(st, s_mark) == 1, "mark crossed -> accrue"
-    assert abs(st.accrued_funding - 270.0) < 1e-6, st.accrued_funding
+    assert abs(st.accrued_funding - 3.0) < 1e-6, st.accrued_funding
     assert st.last_mark_ts == m1
 
     # same mark, second sample -> no double accrue
     assert _accrue_funding(st, FeedSample(ts=m1 + 120, fr=0.0003, efr=0.0003, basis_bps=15,
-                                          spot_price=9_000_000, usdtinr=90)) == 0
-    assert abs(st.accrued_funding - 270.0) < 1e-6, "no double accrue within same mark"
+                                          spot_price=100_000, usdtinr=90)) == 0
+    assert abs(st.accrued_funding - 3.0) < 1e-6, "no double accrue within same mark"
 
     # multi-mark gap: feed outage spanned 2 marks -> accrue ONCE at resumption fr, return 2.
-    st_gap = TraderState(side=-1, qty=0.1, entry_spot=9_000_000, peak_equity=100_000.0,
+    st_gap = TraderState(side=-1, qty=0.1, entry_spot=100_000, peak_equity=100_000.0,
                          entry_basis_bps=10.0, last_mark_ts=m1)
     m3 = m1 + 2 * 8 * 3600
     s_gap = FeedSample(ts=m3 + 60, fr=0.0003, efr=0.0003, basis_bps=15,
-                       spot_price=9_000_000, usdtinr=90)
+                       spot_price=100_000, usdtinr=90)
     assert _accrue_funding(st_gap, s_gap) == 2, "2-mark gap -> return 2"
-    assert abs(st_gap.accrued_funding - 270.0) < 1e-6, "accrue once despite 2-mark gap"
+    assert abs(st_gap.accrued_funding - 3.0) < 1e-6, "accrue once despite 2-mark gap"
 
-    # basis MTM: basis moved 10->15 bps -> qty*(5/1e4)*entry_spot = 0.1*0.0005*9_000_000 = 450
-    assert abs(_basis_mtm(st, s_mark) - 450.0) < 1e-6, _basis_mtm(st, s_mark)
-    # equity = peak + accrued + basis_mtm = 100_000 + 270 + 450 = 100_720
-    assert abs(_mark_equity(st, s_mark) - 100_720.0) < 1e-6, _mark_equity(st, s_mark)
+    # basis MTM: basis moved 10->15 bps -> qty*(5/1e4)*entry_spot = 0.1*0.0005*100_000 = 450
+    assert abs(_basis_mtm(st, s_mark) - 5.0) < 1e-6, _basis_mtm(st, s_mark)
+    # equity = peak + accrued + basis_mtm = 100_000 + 3 + 5 = 100_008
+    assert abs(_mark_equity(st, s_mark) - 100_008.0) < 1e-6, _mark_equity(st, s_mark)
 
     # flat -> equity is peak only
     flat = TraderState(side=0, peak_equity=100_000.0)
@@ -389,23 +389,23 @@ async def _demo_paper_pnl():
     # paper ledger: append-only, events recorded, header on new file.
     import tempfile
     ld = Path(tempfile.mkdtemp()) / "carry_paper.csv"
-    st2 = TraderState(side=-1, qty=0.1, entry_spot=9_000_000, peak_equity=100_000.0,
-                      entry_basis_bps=10.0, accrued_funding=270.0)
-    samp = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=9_000_000, usdtinr=90)
+    st2 = TraderState(side=-1, qty=0.1, entry_spot=100_000, peak_equity=100_000.0,
+                      entry_basis_bps=10.0, accrued_funding=3.0)
+    samp = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=100_000, usdtinr=90)
     _paper_ledger(st2, "ENTER_SHORT", samp, path=ld)
     _paper_ledger(st2, "FUNDING_ACCRUE", samp, path=ld)
     _paper_ledger(st2, "FEED_OUTAGE", None, path=ld)
     import csv
     rows = list(csv.DictReader(ld.read_text().splitlines()))
     assert len(rows) == 3, rows
-    assert rows[0]["event"] == "ENTER_SHORT" and abs(float(rows[0]["accrued_funding"]) - 270.0) < 1e-6
+    assert rows[0]["event"] == "ENTER_SHORT" and abs(float(rows[0]["accrued_funding"]) - 3.0) < 1e-6
     assert rows[2]["event"] == "FEED_OUTAGE" and rows[2]["fr"] == "", rows[2]
 
     # paper _enter_short: NOTIONAL qty (not 0) + peak init to capital. Regression guard for
     # the F1 qty=0.0 zeroing bug. Ledger noop'd here (write path tested above).
     st_ent = TraderState(side=0, peak_equity=0.0)
     s_ent = FeedSample(ts=m0 + 60, fr=0.0003, efr=0.0003, basis_bps=10,
-                       spot_price=9_000_000, usdtinr=90)
+                       spot_price=100_000, usdtinr=90)
     _cfg = {"capital": 100_000, "stop_fill_est": 0.02, "risk_fraction": 0.05,
             "leverage_cap": 5, "pair": "B-BTC_USDT", "spot_pair": "BTCINR"}
     _orig_ledger = _paper_ledger
@@ -494,7 +494,7 @@ async def _demo_feed():
     mod._recorder_sample = lambda: good
     try:
         s = await _paper_feed()
-        assert s is not None and abs(s.fr - 0.0003) < 1e-12 and s.spot_price == 2700000, s
+        assert s is not None and abs(s.fr - 0.0003) < 1e-12 and s.spot_price == 30000, s
         # empty fr -> outage (None)
         mod._recorder_sample = lambda: [{"ts": 1, "sym": "BTC", "fr": None, "efr": None,
                                          "mp": 1, "ls": 1, "spot_inr": "", "usdtinr": "",
@@ -523,7 +523,7 @@ async def _demo_feed():
                     "1700000120,ETH,0.0002,0.0002,2000,2000,180000,90,5.0\n"
                     "1700000180,SOL,0.0001,0.0001,100,100,9000,90,1.0\n")
     s3 = await csv_feed(path=csvp)
-    assert s3 is not None and s3.fr == 0.0004 and s3.spot_price == 2700000.0, \
+    assert s3 is not None and s3.fr == 0.0004 and s3.spot_price == 30000.0, \
         ("csv_feed must return last BTC row, not literal last row", s3)
     # no BTC row at all -> None (feed-outage), matching _paper_feed contract
     csvp.write_text("ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
@@ -569,7 +569,7 @@ async def _demo_faults():
         async def exit_position(self, position_id): self.calls.append(("exit", position_id)); return {"status":"ok"}
     fc = FakeClient()
     st = TraderState(side=0)
-    s = FeedSample(ts=1, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=9_000_000, usdtinr=90)
+    s = FeedSample(ts=1, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=100_000, usdtinr=90)
     await _enter_short(st, s, fc, live=True, cfg={"capital":100_000,"stop_fill_est":0.02,"risk_fraction":0.05,"leverage_cap":5,"pair":"B-BTC_USDT","spot_pair":"BTCINR"})
     assert st.side == 0 and st.halted_orphan is True, (st.side, st.halted_orphan)
     # carry-forward fix: orphan leg must also HALT the loop (SPEC error-handling #1)
@@ -619,8 +619,12 @@ async def _paper_feed() -> FeedSample | None:
         uinr = r.get("usdtinr")
         if fr in (None, "") or bb in (None, "") or sinr in (None, "") or uinr in (None, ""):
             return None
+        # USDT re-point: spot_price is synthetic BTCUSDT = spot_inr/usdtinr (the
+        # recorder's own `synth`), so all downstream accounting is USDT-denominated.
+        # basis_bps is already USDT-correct (perp USDT mark vs this synth).
         return FeedSample(ts=int(r["ts"]), fr=float(fr), efr=float(r.get("efr") or 0.0),
-                          basis_bps=float(bb), spot_price=float(sinr), usdtinr=float(uinr))
+                          basis_bps=float(bb), spot_price=float(sinr) / float(uinr),
+                          usdtinr=float(uinr))
     return None
 
 
@@ -646,8 +650,10 @@ async def csv_feed(path: Path | None = None) -> FeedSample | None:
     if r is None:
         return None
     try:
+        # USDT re-point: spot_price is synthetic BTCUSDT = spot_inr/usdtinr.
         return FeedSample(ts=int(float(r["ts"])), fr=float(r["fr"]), efr=float(r["efr"]),
-                          basis_bps=float(r["basis_bps"]), spot_price=float(r["spot_inr"]),
+                          basis_bps=float(r["basis_bps"]),
+                          spot_price=float(r["spot_inr"]) / float(r["usdtinr"]),
                           usdtinr=float(r["usdtinr"]))
     except (KeyError, ValueError, TypeError):
         return None
