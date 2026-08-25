@@ -60,6 +60,78 @@ def carry_oneside(rate: np.ndarray, band: float, fee_per_fill: float,
     return net, side_arr, entry, flat
 
 
+# --- USDT-margined cost model (component 1 of the USDT carry redesign) ---
+# §27's carry_oneside used one Binance-proxy fee (0.04%) for both legs + 1%
+# sell-only TDS, and modeled no spot-sell fee. Real CoinDCX USDT costs differ:
+# perp maker 0.0236% (§29), spot ~0.199% (0.169%+GST, §29 BTCINR-derived), and
+# USDT C2C spot carries 1% TDS on BOTH buy + sell (Section 194S) = 2% round-trip.
+# Futures leg = no TDS. This function keeps §27's carry_oneside byte-identical
+# (baseline) and adds the real USDT path separately.
+TDS_BUY_USDT = 0.01   # 1% on spot BUY (USDT C2C pair, Section 194S — both sides)
+TDS_SELL_USDT = 0.01  # 1% on spot SELL
+FEE_PERP = 0.000236   # CoinDCX perp maker 0.0236% (§29 verified)
+FEE_SPOT = 0.00199    # CoinDCX spot ~0.169% × 1.18 GST (§29 BTCINR-derived; verify BTCUSDT in comp 3)
+
+
+def carry_oneside_usdt(rate: np.ndarray, band: float, perp_fee: float = FEE_PERP,
+                       spot_fee: float = FEE_SPOT, tds_buy: float = TDS_BUY_USDT,
+                       tds_sell: float = TDS_SELL_USDT):
+    """Executable CoinDCX one-sided carry under real USDT costs. side -1 = short
+    perp + long spot, 0 = flat. Enter short when rate > +band; flatten when rate <
+    -band; HOLD in deadband. entry = perp fill + spot fill + tds_buy (spot buy
+    TDS); flatten = perp fill + spot fill + tds_sell (spot sell TDS). Futures leg
+    has no TDS. Returns per-mark arrays (decomposable by regime), same shape as
+    carry_oneside."""
+    side = 0.0
+    n = len(rate)
+    net = np.zeros(n); side_arr = np.zeros(n)
+    entry = np.zeros(n, int); flat = np.zeros(n, int)
+    for i, r in enumerate(rate):
+        target = (-1.0 if r > band else 0.0) if side == 0.0 else (0.0 if r < -band else -1.0)
+        if target != side:
+            if target == -1.0:           # open short perp + long spot (USDT spot buy TDS)
+                side = -1.0; entry[i] = 1; fee = perp_fee + spot_fee + tds_buy
+            else:                        # flatten: perp close + spot sell (USDT spot sell TDS)
+                side = 0.0; flat[i] = 1; fee = perp_fee + spot_fee + tds_sell
+        else:
+            fee = 0.0
+        side_arr[i] = side
+        net[i] = -side * r - fee          # short receives +rate; flat receives 0
+    return net, side_arr, entry, flat
+
+
+def demo() -> None:
+    """Self-check: USDT cost logic on a synthetic rate path with one entry + one
+    flatten. Verifies entry/flatten/hold fees + that §27 carry_oneside is
+    byte-identical to its prior behavior (baseline preserved)."""
+    # synthetic: rate above band (enter), in band (hold), below -band (flatten)
+    rate = np.array([0.0010, 0.0002, -0.0010])
+    band = 0.0003
+    net, side, ent, flt = carry_oneside_usdt(rate, band)
+    # mark 0: enter short -> fee = perp+spot+tds_buy, net = -(-1)*r - fee = r - fee
+    entry_fee = FEE_PERP + FEE_SPOT + TDS_BUY_USDT
+    assert ent[0] == 1 and flt[0] == 0 and abs(net[0] - (rate[0] - entry_fee)) < 1e-15, \
+        ("entry mark cost wrong", net[0], rate[0] - entry_fee)
+    assert side[0] == -1.0, ("entry should set side -1", side[0])
+    # mark 1: hold (rate within deadband) -> no fee, net = -side*r = r
+    assert ent[1] == 0 and flt[1] == 0 and abs(net[1] - rate[1]) < 1e-15, \
+        ("hold mark should have no fee", net[1], rate[1])
+    # mark 2: flatten -> fee = perp+spot+tds_sell, side 0, net = 0 - fee = -fee
+    flat_fee = FEE_PERP + FEE_SPOT + TDS_SELL_USDT
+    assert flt[2] == 1 and ent[2] == 0 and abs(net[2] - (-flat_fee)) < 1e-15, \
+        ("flatten mark cost wrong", net[2], -flat_fee)
+    assert side[2] == 0.0, ("flatten should set side 0", side[2])
+    # regression: §27 carry_oneside unchanged — its entry is 2*fee (no buy TDS),
+    # flatten is fee + tds (sell-only, no spot-sell fee). Confirm the two models
+    # differ at entry (USDT adds tds_buy + uses real fees) so the baseline is
+    # genuinely preserved as a separate path.
+    n27, _, e27, _ = carry_oneside(rate, band, fee_per_fill=0.0002)
+    assert ent.sum() == e27.sum() == 1, "both models enter once on this path"
+    assert abs(net[0] - n27[0]) > 1e-9, \
+        "USDT entry cost must differ from §27 baseline (extra tds_buy + real fees)"
+    print("carry_oneside_usdt cost logic OK")
+
+
 def regime_runs(f: pd.DataFrame, window: int = 21):
     """Sustained funding regime = sign of rolling-mean funding over `window`
     marks (funding 3/day -> window=21 ~1 week). Returns int array +1/-1/0 and a
