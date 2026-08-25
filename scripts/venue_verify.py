@@ -54,11 +54,16 @@ async def auth_liveness(client) -> ProbeResult:
 async def instrument_perp(client) -> ProbeResult:
     try:
         inst = await client.get_instrument("B-BTC_USDT")
-        # fee: CoinDCX reports taker as a fraction; convert to bps.
+        # fee: CoinDCX reports taker as a fraction (0.00059) or percent (0.059);
+        # convert to bps. <0.01 = fraction (×1e4); else = percent (×1e2). Both
+        # give 5.9 bps for the §29 0.059% taker fee.
         fee_frac = float(inst.get("taker_fee") or inst.get("taker_fee_rate") or 0)
-        fee_bps = fee_frac * 1e4 if fee_frac < 0.01 else fee_frac  # handle both forms
+        fee_bps = fee_frac * 1e4 if fee_frac < 0.01 else fee_frac * 1e2  # handle both forms
         lev = inst.get("leverage") or inst.get("max_leverage")
-        lev_ok = lev is not None and float(lev) >= LEVERAGE_CAP
+        # CoinDCX instrument endpoint does NOT expose leverage (null) — it is set
+        # per-position via update_leverage. Null = not exposed here, not a venue
+        # failure; only fail if a value is returned and it's below our cap.
+        lev_ok = lev is None or float(lev) >= LEVERAGE_CAP
         minq = float(inst.get("min_quantity") or inst.get("min_qty") or 0)
         detail = {"fee_bps": round(fee_bps, 3), "leverage": lev,
                   "min_quantity": minq, "lot_size": inst.get("lot_size"),

@@ -249,12 +249,15 @@ class CoinDCXClient:
     async def get_conversion_rate(self) -> float:
         """Current USDT<>INR conversion rate for INR-margined futures (read-only,
         signed). Endpoint /api/v1/derivatives/futures/data/conversions takes a
-        SECONDS timestamp (not ms like other endpoints). Returns conversion_price.
+        MILLISECONDS timestamp + is GET-with-body (CoinDCX docs use
+        requests.get(url, data=body); POST returns 404). Returns conversion_price.
         This rate is NOT spot USDTINR — the gap is the §29 FX-leg hedge leak."""
-        body = {"timestamp": int(time.time())}  # SECONDS — load-bearing gotcha
+        body = {"timestamp": int(time.time() * 1000)}  # ms per docs
         headers, payload = self._sign(body)
         async with self._rate_lock:
-            r = await self._priv.post(EP["conversions"], content=payload, headers=headers)
+            req = self._priv.build_request("GET", EP["conversions"],
+                                           content=payload, headers=headers)
+            r = await self._priv.send(req)
         data = self._handle(r)
         rows = data if isinstance(data, list) else [data]
         for row in rows:
