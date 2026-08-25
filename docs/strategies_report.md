@@ -2314,3 +2314,493 @@ survives real costs + path-luck guards."
 
 See [[regime-gate-tilt-sweep]] (§31), [[funding-carry-band]] (§20),
 [[carry-funding-regime-walkforward]] (§27/§28).
+
+## §35. Opening Range Breakout (ORB) — 0 edge across all sessions (sub-project 7)
+
+Source: Max Options Trading ORB video (https://www.youtube.com/watch?v=lZn7zVRtAWk).
+US-equity ORB: mark opening-range candle high/low, break + retest → entry, stop
+beyond the opposite OR edge, 2:1 target, optional failed-breakout reversal.
+
+### 35.1 The crypto problem
+
+ORB is a market-OPEN strategy. Crypto trades 24/7 with no bell, so "opening
+range" must be redefined per session. Tested three session opens (UTC=00:00,
+London=07:00, US=14:30) — the user's specific ask. Two builds compared under
+real CoinDCX perp costs (maker 0.025% / taker 0.06% / 2bps slip, maker-on-limit;
+no TDS — §18):
+
+1. **Existing stub** `opening_range_breakout` (long-only, ATR-trail exit, UTC-day range).
+2. **Faithful `orb_max`** (new): long+short retest entry, OR-level stop, 2:1 TP,
+   failed-breakout reversal toggle, session-aware range.
+
+### 35.2 Engine contract (two small fixes)
+
+The backtest engine ignored `BaseStrategy.stop_loss()` (dead hook) and denied
+`take_profit` to shorts. Both fixed — honor strategy stop_loss absolute level,
+honor take_profit on both sides. No behavior change for existing strategies
+(base returns `None`). `tests/test_core.py` 8/8 pass. `orb_max` runs as
+reversion-kind cfg (`use_trailing=False` keeps the OR-level stop fixed).
+
+### 35.3 Results (15m BTC, 2.5y, 70/30 split, MC n=500, regime-split)
+
+Harness: `scripts/orb_backtest.py` (CSV-direct, offline). Self-check passes.
+
+| build       | session | range_bars | full net | OOS net | OOS sh | OOS trades | mcP |
+|-------------|---------|-----------|----------|---------|--------|-----------|-----|
+| stub        | (UTC)   | 3-5       | -1043..-1186 | -2005..-2083 | -2.9..-3.9 | 84-114 | 0.17-0.26 |
+| orb_max     | 00:00   | 3,5       | -1964,-1980 | -1962,-2037 | -3.5,-4.2 | 33,38 | 0 |
+| orb_max     | 07:00   | 3,5       | -2025,-1998 | +6475,+8374 | +1.06,+1.16 | 9,3 | 0 |
+| orb_max     | 14:30   | 3,5       | -2051,-1952 | +2870,+2870 | +1.16,+1.16 | 1,1 | 0 |
+
+### 35.4 Conclusion
+
+**No robust ORB edge in crypto under real costs, any session.**
+
+- Stub loses on every config (OOS sharpe -2.9 to -3.9). Same fate as every
+  breakout/trend strategy under real costs (§19/§30) — costs + whipsaw kill it.
+- orb_max full-sample (train) loses ~-2000 on EVERY config — the dominant
+  signal. The 07:00/14:30 OOS "wins" are 1-9 trades (mcP=0.0): path luck, not
+  edge. `edge()` correctly returns False for all (requires ≥10 OOS trades + mcP>0.5).
+- 00:00 (UTC/Asia) loses both IS and OOS.
+- The dd-wall (0.20 max_drawdown gate) throttled trade counts on all runs — a
+  confound, but it cuts both ways and cannot manufacture edge from a -2000 train.
+
+The faithful video spec (shorts, retest, OR stop, 2:1, reversal) does NOT
+rescue ORB in 24/7 crypto. ORB class closes negative, joining the order-flow
+class (§25/§26) and tilt class (§31/§34). Carry-only (~5-6%/yr §27, USDT
+redesign §29) remains the single standing edge.
+
+Not deployed. No live/paper wiring (research verdict was the gate).
+
+See [[orb-max-no-edge]] (§35), [[regime-gate-tilt-sweep]] (§31/§34),
+[[funding-carry-band]] (§20), [[post-conclusion-followups]] (§29).
+
+### 35.5 Expanded sweep — multi-tf / multi-asset / sessions / optimization (§35 phase 2)
+
+User asked to extend to other timeframes + ETH/SOL + XAU (gold) and check
+optimizations. Harness `scripts/orb_backtest.py` rewritten: multi-asset/tf,
+**UNGATED** (max_drawdown=0 — the §35.3 gated run's dd-wall throttled trades,
+a confound; ungated gives the raw pattern read), 2-phase optimization
+(Phase A best session+range, Phase B sweep reversal x rr). Engine gained
+risk-gate overrides on BacktestConfig (max_drawdown/max_positions/max_daily_loss).
+`test_core.py` 8/8 still pass. Sessions tested: 00:00 (UTC/Asia), 01:00
+(Asia-HK), 07:00 (London), 13:00 (NY-pre), 14:30 (US open).
+
+| asset | tf | best session | rb | OOS net | OOS trades | mcP | edge flag |
+|-------|----|-----------|----|---------|-----------|-----|-----------|
+| BTC | 15m | 07:00 | 3 | +7145 | 25 | 0.09 | False |
+| BTC | 5m  | 01:00 | 3 | +6583 | 24 | 0.73 | **True** |
+| ETH | 15m | 00:00 | 2 | +5331 | 23 | 0.67 | **True** |
+| SOL | 15m | 13:00 | 2 | +19483 | 28 | 0.50 | False |
+| XAU | 15m | 07:00 | 2 | +15905 | 6  | 0.03 | False |
+
+Optimizations tested: reversal toggle, rr {1.5,2,3}, range_bars {1,2,3,5},
+5 sessions. Findings:
+- **failed-breakout reversal fails catastrophically** on BTC5m/ETH/XAU
+  (dd 0.98-0.99, PF 0.02-0.34) — the video's "12:1 bonus" does NOT transfer.
+  SOL is the lone exception where reversal helped OOS (still refuted below).
+- **rr is robust** (1.5/2/3 similar within a config) — RR is not the lever.
+- **stub loses everywhere** (long-only ATR trail chopped to death, dd 0.5-0.99,
+  OOS sharpe -3 to -16). Same fate as all trend/breakout under real costs.
+
+### 35.6 Walk-forward rigor gate — all flags refuted as path luck
+
+The three "edge=True"-ish flags (BTC5m 01:00, ETH15m 00:00, SOL15m 13:00
+reversal) are 17-28 OOS-trade cells with PF 10-17 — the classic thin-sample
+path-luck signature this project has seen before ([[multi-asset-regime-walkforward]]).
+Applied the standard rigor gate (`scripts/orb_wf.py`, mirrors [[regime-gate-tilt-sweep]]:
+K=4 contiguous folds + 70/30 + circular-block bootstrap CI). Pass = net>0 in
+>=3/4 folds AND aggregate>0 AND 70/30 OOS>0 AND CI lo>0.
+
+| candidate | fold1 | fold2 | fold3 | fold4 | full | CI lo | verdict |
+|-----------|-------|-------|-------|-------|------|-------|---------|
+| BTC 5m 01:00 retest rr=3 | -7027 | -7273 | -4491 | +21639 | -8815 | -3.74 | **FAIL** |
+| ETH 15m 00:00 retest rr=2 | -4440 | +254 | -3462 | +5693 | -4638 | -1.46 | **FAIL** |
+| SOL 15m 13:00 reversal rr=2 | -8852 | -7735 | -3402 | +2897 | -9752 | -5.10 | **FAIL** |
+
+Every flag fails: folds 1-3 lose on 68-221 trades; only fold-4 (the last ~year,
+17-28 trades) wins. Full-sample net negative. Bootstrap CI lower bound < 0.
+The 70/30 "edge" was one lucky regime window — not edge.
+
+### 35.7 Conclusion (expanded, definitive)
+
+**No robust ORB edge in crypto or gold perp, any timeframe / session / asset /
+mode, under real CoinDCX perp costs.** The faithful video spec (shorts, retest,
+OR-level stop, 2:1 TP, failed-breakout reversal) and its optimizations (rr,
+session, range_bars) do not survive K-fold walk-forward + bootstrap CI. Every
+"edge=True" 70/30 flag refuted as last-year OOS path luck. The failed-breakout
+reversal actively destroys capital (dd ~0.99) — the video's headline "12:1"
+play does not transfer to 24/7 perp.
+
+ORB class closes negative, definitively (rigor-gated), joining order-flow
+(§25/§26) and tilt (§31/§34). Strengthens §28: no robust retail perp edge at
+free-data resolution across yet another structurally different class. Carry-only
+(~5-6%/yr §27, USDT redesign §29) remains the single standing edge.
+
+Engine improvements kept (no regression): `BaseStrategy.stop_loss()` honored
+(absolute level), `take_profit()` honored on shorts, BacktestConfig risk-gate
+overrides. `orb_max` + `scripts/orb_backtest.py` + `scripts/orb_wf.py` retained
+as reproducible research artifacts. NOT deployed; no live/paper wiring.
+
+See [[orb-max-no-edge]] (§35), [[regime-gate-tilt-sweep]] (§31/§34),
+[[multi-asset-regime-walkforward]] (path-luck precedent), [[post-conclusion-followups]] (§29).
+
+### 35.8 Regime-gate + visit-count rescue attempt — 0/10 survives (§35 phase 3)
+
+User asked: can regime-gating or a "put your order where your stop goes, count
+visits" filter rescue ORB? Three hypotheses tested via `scripts/orb_regime.py`
+(regime attribution + per-regime K-fold consistency) on the 3 thin-sample
+"edge=True" candidates, 10 configs total:
+
+- **H1 trend gate** (`regime_sma=200` — engine built-in: longs only above SMA,
+  shorts only below; zero new code): no rescue. SOL reversal → all 4 folds turn
+  negative (-7254/-4468/-7006/-6942); the gate removes even the fold-4 luck.
+  ETH → folds 2&4 win (+6454/+7337) but folds 1&3 lose, full -5157, still FAIL.
+- **H3 visit-count** (`min_visits` on orb_max — count pre-break touches of the
+  stop level; new param + self-check): no rescue. min_visits 1/2 leave the
+  verdict unchanged (SOL identical to baseline; ETH same fold-4-luck pattern).
+- **H2 per-regime attribution** (ex-ante trend dir via prior-day SMA x vol tier
+  via rolling ATR percentile): NO regime has >=10 trades + net>0 + >=3/4 folds
+  positive. The textbook ORB regime (ETH trend=up vol=high, 58 trades) nets
+  +658 but only 1/4 folds — all profit is fold-4 (+2065); folds 1-3 lose.
+  Win rates 11-24% across regimes. The "profitable regime" was fold-4 path
+  luck, not a regime-conditional edge.
+
+| config | H1 folds | full | ci_lo | H1 | H2 |
+|--------|----------|------|-------|----|----|
+| BTC 5m baseline | -7027/-7273/-4491/+21639 | -8815 | -3.74 | FAIL | False |
+| BTC 5m +regime_sma200 | -3961/-6211/-3938/-1547 | -8771 | -2.87 | FAIL | False |
+| BTC 5m +min_visits1 | -5517/-5858/-6022/+954 | -9191 | -3.60 | FAIL | False |
+| ETH 15m baseline | -4440/+254/-3462/+5693 | -4638 | -1.46 | FAIL | False |
+| ETH 15m +regime_sma200 | -6089/+6454/-2573/+7337 | -5157 | -1.60 | FAIL | False |
+| ETH 15m +min_visits1 | -4158/-420/-2425/+5659 | -5286 | -1.73 | FAIL | False |
+| ETH 15m +min_visits2 | -4538/+232/-1959/+6861 | -4647 | -1.62 | FAIL | False |
+| SOL 15m reversal baseline | -8851/-7735/-3402/+2897 | -9752 | -5.10 | FAIL | False |
+| SOL 15m reversal +regime_sma200 | -7254/-4468/-7006/-6942 | -9876 | -5.16 | FAIL | False |
+| SOL 15m reversal +min_visits1 | -8851/-7735/-3402/+2897 | -9752 | -5.10 | FAIL | False |
+
+### 35.9 How ORB could be deployed (if it ever passed the gate) — NOT triggered
+
+The plumbing exists and was verified, so the deploy path is documented for
+completeness — but the research gate (edge) is NOT met, so none of this fires:
+- `orb_max` is registered in `app/strategy/registry.py` → `get_strategy("orb_max", ...)`.
+- Trend regime gate = engine `BacktestConfig.regime_sma` (already wired; tested
+  above). A richer ex-ante regime filter would be a `regime_filter` param on
+  orb_max gating entry by (trend_dir, vol_tier) — but H2 showed no such filter
+  has consistent edge, so it would be fitting noise.
+- Live/paper: add `orb_max` to `rank.py` STRATEGIES + boot the existing paper-
+  trader (`scripts/carry_trader.py` pattern) with it. No new live infra needed.
+- The §35 verdict blocks all of this: no edge = no deploy.
+
+### 35.10 Final conclusion (sub-project 7 closed)
+
+ORB is refuted across every dimension tested: 2 timeframes (5m/15m), 4 assets
+(BTC/ETH/SOL/XAU-gold), 5 sessions, 2 modes (retest/reversal), RR 1.5-3,
+range_bars 1-5, trend regime gate (regime_sma), vol-tier regime, and visit-count
+filter. 0/10 rescue configs survive K-fold walk-forward + bootstrap CI. The
+"profitable regime" hypothesis (the project's recurring "no robust edge, but
+maybe a conditional one" pattern) is refuted for ORB: the only positive cells
+are fold-4 (last-year) path luck, not a regime-conditional edge — win rates stay
+11-24% even in the textbook uptrend+high-vol regime.
+
+ORB class closes negative, definitively. Joins order-flow (§25/§26), tilt
+(§31/§34), and now breakout/ORB. Strengthens §28 (no robust retail perp edge at
+free-data resolution) across a fourth structurally different class. Carry-only
+(~5-6%/yr §27, USDT redesign §29) remains the single standing edge.
+
+Retained (no regression, test_core 8/8): engine stop_loss/short-TP/risk-gate
+overrides; `orb_max` (+ min_visits); `scripts/orb_backtest.py`,
+`scripts/orb_wf.py`, `scripts/orb_regime.py` as reproducible artifacts. NOT
+deployed; no live/paper wiring.
+
+See [[orb-max-no-edge]] (§35), [[regime-gate-tilt-sweep]] (§31/§34 — same
+regime-gate class refuted), [[multi-asset-regime-walkforward]] (path-luck
+precedent), [[post-conclusion-followups]] (§29).
+
+### 35.11 Higher timeframe test (1h, 4h) — thinner = more path luck, 0 edge
+
+User asked to try higher TFs. 1d skipped (1 bar/day, no intraday range = no
+session ORB). 1h and 4h resampled from 15m base (`scripts/orb_backtest.py`
+gained `load_tf` resample; 2.5y BTC/ETH/SOL, ungated, real perp costs).
+
+Prediction confirmed: higher TF = fewer trades = MORE path luck, not less.
+
+| TF | asset | best cell | OOS tr | OOS net | OOS sh | mcP | edge |
+|----|-------|-----------|-------:|--------:|-------:|----:|------|
+| 1h | BTC | 13:00 rb=1 rr=3 | 3 | +7811 | 1.17 | 0.69 | False |
+| 1h | ETH | 07:00 rb=1 rr=1.5 | 3 | +8138 | 1.19 | 0.69 | False |
+| 1h | SOL | 07:00 rb=1 rr=3 | 3 | +3738 | 1.18 | 0.69 | False |
+| 4h | BTC | 07:00 rb=1 rr=2 | 2 | +3887 | 1.21 | 0.41 | False |
+| 4h | ETH | 07:00 rb=1 rev rr=1.5 | 9 | +2446 | 0.86 | 0.70 | False |
+| 4h | SOL | 07:00 rb=1 rr=2 | 19 | +3182 | 0.83 | 0.20 | False |
+
+- 1h: every "best" cell = 3 OOS trades. Pure 3-trade lottery. Reversal destroys
+  capital (dd 0.92-0.94) as at lower TFs.
+- 4h: sessions 13:00/14:30 = 0 trades (4h bars don't align to those opens — the
+  opening range never forms). Closest-to-flag SOL 4h (19 trades, +3182) fails
+  mcP=0.20; ETH 4h reversal (9 trades) fails the >=10 trade count.
+- No cell reaches the edge bar (`oos_net>0 AND oos_sharpe>0 AND oos_trades>=10
+  AND mcP>0.5`). K-fold rigor gate not even run — flagged cells are 2-19 trades
+  TOTAL; K-fold = 0-5 trades/fold = pure noise. Rigor fails before it starts.
+
+ORB refuted across 4 timeframes now (5m/15m/1h/4h). Higher TF makes it WORSE,
+not better — the "edge" was always thin-sample fold-4 luck, and higher TF
+thins the sample further. §35.10 verdict stands.
+
+### 35.12 Recent-window stats (1y, 3m) — more edge=True flags, ALL fail rigor
+
+User asked for past-1y and past-3m stats. Short windows flag MORE edge=True
+cells than full-sample — and that is exactly why they are path luck, not edge.
+
+**Selection leak (harness):** `score_grid` sorts by `oos_net` — "best session"
+is picked by *test-window* performance, not train. So edge=True is selected on
+the very window being judged. A 1y window IS fold-4 (the lucky last-year fold
+refuted in §35.7). edge=True on 1y = the path luck itself.
+
+1y edge=True flags (7 cells): BTC/ETH/SOL 15m, BTC 5m, BTC/SOL 1h, BTC 4h.
+K-fold rigor gate (K=4 quarterly folds + 70/30 + bootstrap CI) run on each:
+
+| cell (1y) | folds net | CI lo | verdict |
+|-----------|-----------|------:|---------|
+| BTC 15m 07:00 rb=3 | -501/+2817/+52/+2825 | -0.18 | FAIL |
+| ETH 15m 00:00 rb=3 | -190/-645/+1270(1tr)/+3953(9tr) | -0.15 | FAIL |
+| BTC 5m 01:00 rb=3 | +3880/-3775(60tr)/+2978(2tr)/+7102 | -0.15 | FAIL |
+| BTC 1h 07:00 rb=2 | -447/+2820(3tr)/-579/+2343 | -0.15 | FAIL |
+| SOL 1h 00:00 rb=1 | +97/+898/-499/+3268 | -0.23 | FAIL |
+| SOL 15m 01:00 rb=2 | +2454/+4416(4tr)/+213/+2894 | -0.19 | FAIL |
+| BTC 4h 00:00 rb=1 | -55/+791(2tr)/-128/+1757 | -0.10 | FAIL |
+
+**0/7 survive.** Every CI lower bound < 0. Fold pattern is the tell: single-fold
+wins on 1-9 trades, losing/flat folds on 24-60 trades. BTC 5m: fold 2 loses
+-3775 on 60 trades while fold 4 wins +7102 on 11 — variance, not edge.
+
+3m window (1 quarter): even thinner. Only ETH 15m 13:00 (14 trades, mcP 0.8)
+flags edge=True; rest edge=False on 5-14 trades. K-fold on 3m = monthly folds of
+~3-4 trades = noise; not runnable. A 3-month/14-trade lottery is not a strategy.
+
+**Conclusion:** recent windows refute ORB *harder*, not rescue it. Short windows
+inflate path luck (fewer trades = more variance = more lucky cells pass mcP>0.5)
+and the selection leak picks the luckiest. The rigor gate — built for exactly
+this — catches all 7. §35.10 verdict stands: no ORB edge, any window, any TF.
+
+### 35.13 ENGINE BUG: short take_profit never passed — §35 short-side corrupted; corrected recent-window results
+
+A real engine bug was found while answering "recent win/loss counts."
+`app/backtest/engine.py` line 190 hardcoded `take_profit=None` for shorts,
+ignoring the strategy's `take_profit` (the §35 phase-1 "fix" computed `tp` but
+never passed it to the short Position). Effect: every short that ran into
+profit held until stop_loss or end-of-data — never taking its 2:1 target. One
+short on BTC 15m 07:00 rb=3 opened 2025-10-27 at 115077 and rode BTC's -45%
+drop to 2026-07-31 (9 months), force-closed "eod" at 62872 for +4106 — a single
+buggy trade that manufactured the entire "+3238 net, edge=True" flag.
+
+Fix: line 190 `take_profit=None` -> `take_profit=tp`. `_manage` is already
+symmetric (line 270-276: `tp_hit = row["low"] <= tp` for shorts). test_core 8/8.
+
+**Impact: the §35.12 "edge=True" recent-window flags were ALL this bug.** With
+the fix, re-run win/loss on every flagged cell. The "current regime works"
+story was a bug — ORB is a clean cost-bleed, not even path luck.
+
+Corrected 1y (best cells, ungated, real perp costs):
+
+| cell (1y) | trades | wins | losses | win% | avg_win | avg_loss | net | Q1 | Q2 | Q3 | Q4 |
+|-----------|-------:|-----:|-------:|-----:|--------:|---------:|----:|---:|---:|---:|---:|
+| BTC 15m 07:00 rb=3 | 329 | 137 | 192 | 41.6 | 83 | -81 | **-4130** | -1301 | -2471 | +209 | -567 |
+| ETH 15m 00:00 rb=3 | 313 | 129 | 184 | 41.2 | 117 | -96 | **-2529** | -536 | -290 | -1453 | -251 |
+| SOL 15m 01:00 rb=2 | 336 | 144 | 192 | 42.9 | 113 | -97 | **-2397** | +275 | -884 | -1507 | -281 |
+| BTC 5m 01:00 rb=3 | 338 | 129 | 209 | 38.2 | 75 | -75 | **-5937** | -1806 | -1976 | -1088 | -1066 |
+| BTC 1h 07:00 rb=2 | 242 | 100 | 142 | 41.3 | 86 | -85 | **-3482** | -416 | -1562 | -1252 | -251 |
+| SOL 1h 00:00 rb=1 | 200 | 84 | 116 | 42.0 | 101 | -95 | **-2474** | +9 | -486 | -1077 | -920 |
+| BTC 4h 00:00 rb=1 | 118 | 58 | 60 | 49.2 | 103 | -96 | +231 | +431 | -615 | -167 | +582 |
+
+6 of 7 cells net negative over 1y. Win% 38-43%. The "2:1 RR" is theoretical:
+realized avg_win/avg_loss ≈ 1.0-1.3 (TP hits at exactly 2:1, but stops + fees
++ slippage compress the realized ratio to ~1.1). At 41% win and 1.1 realized
+RR, ORB is a net cost-bleed. The lone positive (BTC 4h, +231 on 118 trades =
++0.2%/trade) is statistical flat: bootstrap CI -0.18 to 0.24, k4_pass=False.
+
+Corrected 3m (last quarter 2026-05..07): all 3 cells net negative (ETH 13:00
+-101, BTC 14:30 -371, SOL 00:00 -786); only the last ~3 weeks (Q4) positive on
+tiny samples (13-23 trades), preceded by 3 losing quarters.
+
+K-fold (corrected) confirms clean loss, not path luck:
+- BTC 15m 07:00: folds -1396/-2825/+353/-822, CI **-0.92 to -0.09** (entire CI < 0).
+- SOL 15m 01:00: folds +229/-848/-1523/-376, CI -0.68 to 0.12, k4_pass=False.
+- BTC 4h 00:00: folds +131/-314/-2/+366, CI -0.18 to 0.24 (flat).
+
+**Answer to "the current regime works until it doesn't":** it was never
+working. The "working" was a single buggy short riding a 9-month trend to
+end-of-data. With take_profit honored, ORB loses in 6/7 cells over the last
+year and all recent cells lose over the last 3 months. Win rate 38-43%, realized
+RR ~1.1 (not 2:1) — a steady cost-bleed, not a regime-conditional edge that
+"works until it doesn't." There is no profitable recent regime to deploy into.
+
+The §35 no-edge verdict STRENGTHENS (the bug made shorts look better than
+reality; fixing it makes ORB worse). All prior §35 short-side numbers (reversal
+mode especially) were computed with this bug and are conservative in the
+no-edge direction — the verdict stands a fortiori.
+
+### 35.14 Exit-method optimization sweep — 0/30 rescue; problem is entry, not exit
+
+User asked to try trailing stop + fib-level TP, and other SL/TP methods. Built
+exit-management params into `orb_max` (`tp_mode` rr|fib|trail, `fib`, `sl_mode`
+or|atr, `atr_mult`) and swept 10 exit configs on the 3 best 15m cells (BTC
+07:00, ETH 00:00, SOL 01:00), last 1y, ungated, real perp costs, K-fold rigor
+inline (`scripts/orb_exits.py`).
+
+| config | BTC net | ETH net | SOL net | effect |
+|-------|--------:|--------:|--------:|--------|
+| E1 ORstop+rr2 (base)       | -4130 | -2529 | -2397 | baseline (post-bug) |
+| E2 ORstop+fib1.618        | -3542 | -2670 | -2140 | win% 48-50 (best) but net still neg |
+| E3 ORstop+fib2.618        | -4225 | -2766 | -2731 | win% 33-35 -- target too far |
+| E4 ORstop+fib3.618        | -2963 | -2173 | -3142 | win% 26-30 -- fewer wins, smaller |
+| E5 +fib2.618+ATRtrail2    | -6016 | -4435 | -4708 | trailing WORSE, win% 28-33, dd 0.6 |
+| E6 +fib2.618+ATRtrail3    | -5822 | -4211 | -4231 | same, trail3 marginally better |
+| E7 +BE@1R+trail2          | -6016 | -4435 | -4708 | == E5 (BE subsumed by trail) |
+| E8 +partial1.618+trail2   | -6698 | -5910 | -6229 | WORST -- bank half wins, full losses |
+| E9 pure ATR trail2 (no TP) | -6251 | -4612 | -5092 | no cap = whipsaw bleed, win% 27-32 |
+| E10 ATRstop1.5+fib2.618+tr2| -7084 | -5560 | -4669 | wider stop = bigger losses, dd 0.71 |
+
+**0/30 pass K-fold rigor (all CI lo < 0, all k4_pass=False).** None net positive.
+
+Findings:
+- Fib TP: arbitrary in 24/7 crypto (no market open, no real "extension"). Higher
+  fib shrinks win% (target harder to reach); lower fib shrinks avg_win. The RR
+  compression (entry gaps above the retest -> stop distance grows, TP distance
+  shrinks, realized RR ~1.1 not 2.0) is structural and unfixable from the exit.
+- Trailing/partial/ATR-stop all INCREASE the cost-bleed: more turnover (335 ->
+  451 trades on partial), higher dd (0.47 -> 0.71), whipsaw in chop. Trailing
+  helps in trends but ORB breaks happen in chop where it gets cut.
+- Break-even@1R is redundant once a trail ratchets (E7 == E5).
+- Best win% of any config (E2 fib1.618, 48-50%) still nets negative -- because
+  the win rate, not the payoff, is the binding constraint.
+
+**Diagnosis:** ORB's problem is the ENTRY signal (breakouts mostly fail, 38-43%
+win), not the exit. No SL/TP method recovers a sub-50% win rate with realized
+RR ~1.1 under real perp costs. Exit optimization is refuted. The §35.10 verdict
+stands -- the edge cannot be manufactured from the exit side.
+
+Engine/strategy retained (no regression, test_core 8/8 + orb_max self-check):
+`orb_max` gained `tp_mode`/`fib`/`sl_mode`/`atr_mult`; `scripts/orb_exits.py` is
+a reproducible artifact. NOT deployed.
+
+### 35.15 Exit sweep extended to XAU (gold) — same verdict, 0/40 total
+
+User asked about ETH/SOL/XAU for the exit sweep. ETH and SOL were already in
+§35.14 (BTC 07:00, ETH 00:00, SOL 01:00). XAU best 15m cell (00:00 rb=5) added;
+re-ran the full 10-config sweep across all 4 cells (40 configs total).
+
+XAU 15m 00:00 rb=5, last 1y:
+
+| config | trades | win% | net | dd | CI lo | verdict |
+|--------|-------:|-----:|----:|---:|------:|---------|
+| E1 ORstop+rr2 | 270 | 44 | -2448 | 0.35 | -0.71 | fail |
+| E2 +fib1.618 | 287 | 46 | -3365 | 0.39 | -0.80 | fail |
+| E3 +fib2.618 | 236 | 40 | +47 | 0.31 | -0.45 | fail (fold-4 luck) |
+| E4 +fib3.618 | 179 | 34 | +982 | 0.28 | -0.34 | fail (fold-4 luck) |
+| E5 +fib2.618+trail2 | 336 | 26 | -6150 | 0.62 | -1.19 | fail |
+| E6 +fib2.618+trail3 | 326 | 30 | -5683 | 0.58 | -1.15 | fail |
+| E7 +BE1+trail2 | 336 | 26 | -6150 | 0.62 | -1.19 | fail (==E5) |
+| E8 +partial1.618+trail2 | 393 | 35 | -6586 | 0.66 | -1.29 | fail |
+| E9 pure ATR trail2 | 335 | 26 | -6201 | 0.62 | -1.21 | fail |
+| E10 ATRstop1.5+fib2.618+tr2 | 336 | 26 | -8307 | 0.83 | -2.15 | fail |
+
+**0/40 pass.** XAU mirrors crypto: trailing/partial/ATR-stop all worse than the
+fixed baseline. The only configs that nudge positive (E3 +47, E4 +982) are
+fold-4 path luck -- the 2026 gold rally hits the 3.618 target while chop
+quarters stop out; folds 1-2 lose -1400, fold 4 wins +2889/+3330, CI lo < 0.
+That is the "rare big win compensates for many small losses" signature, not a
+regime-conditional edge -- K-fold refutes it.
+
+XAU baseline win% 44%, same entry problem as BTC/ETH/SOL (breakouts mostly fail).
+Gold's larger opening ranges (rb=5) don't change the win rate; the higher-fib
+TPs just let the rare trending sessions reach target, which is fold-luck not
+edge. The §35.14 diagnosis holds across all 4 assets: ORB's binding constraint is
+the entry (38-44% win), not the exit; no SL/TP method recovers it under real
+costs. Exit optimization refuted, 0/40.
+
+### §35.16 — NY + Asia session-open only (rescue attempt 8)
+
+**Question (user):** what if ORB is tested *only* on New York and Asia session
+opens (drop London)? NY liquidity / Asia range theory might be where ORB works.
+
+**Setup.** Restricted the session grid to Asia (00:00, 01:00) + NY (13:00,
+14:30), dropped London 07:00. Re-picked best cell per asset on the restricted
+grid (1y, scripts/orb_backtest.py `--sessions`), then ran the full 10-exit
+sweep (E1-E10) on those NY/Asia-only cells with K-fold rigor
+(scripts/orb_exits.py `--ny-asia`).
+
+Best NY/Asia cells (1y): BTC 00:00 rb=5 (Asia — flipped from London 07:00),
+ETH 13:00 rb=3 (NY-pre — flipped from Asia 00:00, selection leak), SOL 01:00
+rb=3 (Asia), XAU 00:00 rb=5 (Asia, unchanged — was already global best).
+
+**Results: 0/40 pass.** reports/orb_exits_nyasia.log.
+
+| asset | cell | best exit | net | folds | CIlo | verdict |
+|-------|------|-----------|-----|-------|------|---------|
+| BTC | 00:00 rb=5 | E2 fib1.618 | -2533 | -702,-2007,-522,723 | -0.69 | fail |
+| ETH | 13:00 rb=3 | E4 fib3.618 | +2536 | 1514,-301,4,1099 | -0.20 | fail |
+| SOL | 01:00 rb=3 | E1 rr2 | -204 | 157,-693,-282,739 | -0.44 | fail |
+| XAU | 00:00 rb=5 | E4 fib3.618 | +982 | -1398,-1423,1071,3330 | -0.34 | fail |
+
+**Closest call.** ETH 13:00 (NY) E1 base ORstop+rr2: net +1294, 3/4 folds
+positive [821,-883,734,840] — the only cell to clear the k4 gate — but bootstrap
+CIlo=-0.21 <0 → fail. This is exactly the ETH "edge=True" flag from the
+restricted grid (mcP=0.56, OOS +1078): selection picked NY 13:00 by OOS net,
+fold-4 luck pushed 3/4 folds positive, but the circular-block bootstrap sees
+the negative fold-2 and the thin per-trade edge → CI straddles zero. Path luck,
+not edge — the CI gate is what kills it, as designed.
+
+**Diagnosis unchanged.** NY+Asia restriction does not rescue ORB. Dropping
+London removes BTC's only decent cell (07:00 was its global best) and forces BTC
+onto a worse Asia cell (-2533 vs -4130 is just less bad). ETH's "improvement"
+(+1294 vs -2529) is selection-on-OOS leak + fold-4 luck, refuted by CI. Exit
+methods track the §35.14 pattern exactly: trailing/partial/ATR-stop all worsen
+net and dd (whipsaw in chop); higher-fib TPs lower win% but let fold-4 trend
+bars reach target (XAU E4 +982 on fold-4 +3330, folds 1-2 deeply negative).
+Entry remains the binding constraint (win% 34-53, mostly <50).
+
+**Verdict.** ORB refuted on NY+Asia-only sessions, 0/40 pass K-fold rigor.
+Joins the full-session (0/40, §35.14/15), higher-TF (§35.11), recent-window
+(§35.12), regime-gate + visit-count (§35.8-10), and engine-bug-corrected
+(§35.13) refutations. ORB class closed negative across every session subset
+tested. Carry-only (~5-6%/yr §27/§29) remains the single standing edge.
+
+### §35.17 — ORB live paper trader (observation, not deployment)
+
+**User decision:** paper-trade ETH + gold ORB despite §35.16 0/40 K-fold fail
+(CIlo<0). Rationale: observe out-of-sample before any real money; "see what
+happens." Research verdict unchanged — this is observation, not deployment.
+
+**Built:** `scripts/orb_paper.py` — bar-driven live paper runner (NOT the carry
+funding/tick loop). Binance USDT-M perp public REST klines
+(`fapi.binance.com/fapi/v1/klines`), 15m, polled every 60s, acts only on CLOSED
+candles (no look-ahead). One position per asset, single-position model mirroring
+`engine.py:163`. Reuses `orb_max` (generate_signals + stop_loss/take_profit)
+causally — signal at bar i computed on `df.iloc[:i+1]` only.
+
+**Config (§35.16 best NY/Asia cells, exit E1 rr2 OR-stop):**
+- ETHUSDT 13:00 rb=3 (NY)
+- PAXGUSDT 00:00 rb=5 (Asia gold)
+
+**Costs/sizing:** real perp costs (maker 0.025%/taker 0.06%/2bps slip each side,
+taker both sides = market entry/exit), lev 3, $200 notional/trade, $1000 paper
+capital, 25% DD flatten+halt. Honest paper PnL, not optimistic.
+
+**Ledger/state:** `reports/orb_paper.csv` (ts,sym,event,price,qty,pnl,equity —
+events ENTER_LONG/SHORT, EXIT_TP/SL/DD, DD_HALT), `reports/orb_paper_state.json`
+(per-asset pos/equity/peak/halted, survives restart). Separate from carry
+ledger. Carry's `paper_check` criteria don't apply (funding_nonneg) — orb-
+specific check deferred; first observe ≥7d raw.
+
+**Deploy:** `deploy/orb-paper.service` (systemd, Oracle, 24/7 alongside carry).
+
+**Self-check:** `python -m scripts.orb_paper demo` — long retest entry, TP exit,
+short entry + SL exit, state round-trip, PnL = gross - round-trip cost. PASS.
+Live smoke (real klines, last 40 bars): ETH ENTER_LONG @2481.56 → EXIT_SL
+@2453.0 (-2.62, cost-bleed as predicted); PAXG no signal in window. test_core 8/8.
+
+**Expectation:** per §35.16, CIlo<0 → expect steady cost-bleed, not edge. Paper
+will show whether fold-3/4 regime continues out-of-sample or reverts to the
+negative mean. Either outcome is informative; neither changes the research
+verdict (paper = observation, comp4 gate is carry-only).

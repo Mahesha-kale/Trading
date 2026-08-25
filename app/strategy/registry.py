@@ -7,6 +7,7 @@ from app.strategy.bollinger import BollingerReversion
 from app.strategy.breakout import Breakout
 from app.strategy.ema_cross import EmaCross
 from app.strategy.macd import MacdCross
+from app.strategy.orb_max import ORBMax
 from app.strategy.rsi_reversal import RsiReversal
 from app.strategy.batch import (AdxTrend, CciReversion, DonchianBreakout,
                                  EmaPullback, FairValueGap, IchimokuBreakout,
@@ -43,6 +44,7 @@ REGISTRY: dict[str, type[BaseStrategy]] = {
     EmaPullback.meta.name: EmaPullback,
     RegimeGate.meta.name: RegimeGate,
     TakerRatio.meta.name: TakerRatio,
+    ORBMax.meta.name: ORBMax,
 }
 
 

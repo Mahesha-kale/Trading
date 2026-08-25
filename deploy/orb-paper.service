@@ -1,0 +1,16 @@
+[Unit]
+Description=ORB paper trader (sub-project 7, Binance klines, no orders)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Trading
+Environment=PYTHONPATH=/home/ubuntu/Trading
+ExecStart=/home/ubuntu/Trading/.venv/bin/python -m scripts.orb_paper --capital 1000 --notional 200
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
