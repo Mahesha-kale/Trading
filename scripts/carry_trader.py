@@ -516,6 +516,19 @@ async def _demo_feed():
     s2 = await csv_feed(path=csvp)
     assert s2 is not None and abs(s2.fr - 0.0004) < 1e-12 and s2.basis_bps == 11.0, s2
     assert await csv_feed(path=td / "nope.csv") is None, "missing CSV -> None"
+    # regression: recorder interleaves BTC/ETH/SOL; csv_feed must take the last
+    # BTC row, NOT the literal last row (wrong spot_price/qty would poison PnL).
+    csvp.write_text("ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
+                    "1700000060,BTC,0.0004,0.0004,30000,30000,2700000,90,11.0\n"
+                    "1700000120,ETH,0.0002,0.0002,2000,2000,180000,90,5.0\n"
+                    "1700000180,SOL,0.0001,0.0001,100,100,9000,90,1.0\n")
+    s3 = await csv_feed(path=csvp)
+    assert s3 is not None and s3.fr == 0.0004 and s3.spot_price == 2700000.0, \
+        ("csv_feed must return last BTC row, not literal last row", s3)
+    # no BTC row at all -> None (feed-outage), matching _paper_feed contract
+    csvp.write_text("ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
+                    "1700000060,ETH,0.0002,0.0002,2000,2000,180000,90,5.0\n")
+    assert await csv_feed(path=csvp) is None, "no BTC row -> None"
 
     # field-tolerant loader: old state (missing new fields) + unknown keys -> loads with defaults.
     old = td / "old_state.json"
@@ -621,7 +634,17 @@ async def csv_feed(path: Path | None = None) -> FeedSample | None:
     rows = list(csv.DictReader(p.read_text().splitlines()))
     if not rows:
         return None
-    r = rows[-1]
+    # take the last BTC row, not the literal last row: the recorder interleaves
+    # BTC/ETH/SOL, so rows[-1] is often a non-BTC asset whose fr/spot_price
+    # (SOL ~97 vs BTC ~78700) would poison qty + PnL. Mirrors _paper_feed's
+    # sym=="BTC" filter; no BTC row -> None (feed-outage), same as REST.
+    r = None
+    for row in reversed(rows):
+        if row.get("sym") == "BTC":
+            r = row
+            break
+    if r is None:
+        return None
     try:
         return FeedSample(ts=int(float(r["ts"])), fr=float(r["fr"]), efr=float(r["efr"]),
                           basis_bps=float(r["basis_bps"]), spot_price=float(r["spot_inr"]),
