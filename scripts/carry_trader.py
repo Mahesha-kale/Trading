@@ -513,9 +513,9 @@ async def _demo_feed():
     csvp = td / "coindcx_venue.csv"
     csvp.write_text("ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
                     "1700000060,BTC,0.0004,0.0004,30000,30000,2700000,90,11.0\n")
-    s2 = csv_feed(path=csvp)
+    s2 = await csv_feed(path=csvp)
     assert s2 is not None and abs(s2.fr - 0.0004) < 1e-12 and s2.basis_bps == 11.0, s2
-    assert csv_feed(path=td / "nope.csv") is None, "missing CSV -> None"
+    assert await csv_feed(path=td / "nope.csv") is None, "missing CSV -> None"
 
     # field-tolerant loader: old state (missing new fields) + unknown keys -> loads with defaults.
     old = td / "old_state.json"
@@ -611,7 +611,7 @@ async def _paper_feed() -> FeedSample | None:
     return None
 
 
-def csv_feed(path: Path | None = None) -> FeedSample | None:
+async def csv_feed(path: Path | None = None) -> FeedSample | None:
     """CSV paper/live feed (Oracle). Reads the last row of reports/coindcx_venue.csv
     (recorder writes it 60s-polled) -> FeedSample. Missing/empty -> None (outage)."""
     import csv
