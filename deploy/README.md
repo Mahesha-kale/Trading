@@ -33,11 +33,40 @@ is alive each session. If reclaimed: reprovision, re-run setup, re-point at the
 new public IP. The accrued ticks are on the box disk — lost on reclamation;
 periodically scp down (`scp ubuntu@<ip>:~/Trading/reports/ticks_*.csv reports/`).
 
-## Carry trader
+## Phase 1 paper-trader deploy
 
-`scripts/carry_trader.py` — the hybrid carry paper/live loop (§30). Paper mode:
-`python scripts/carry_trader.py`; live adds `--live`, refused unless
-`settings.trading_mode == "live"` (Phase 2, gated behind clean Phase 1 paper).
-Kill-switch: `reports/carry_trader.HALT` → flatten all + halt. State:
-`reports/carry_trader_state.json` (persisted, reconciled against exchange on
-restart). NOT deployed — paper-gated on the Phase 0 venue-verify recorder above.
+Runs the carry trader in PAPER mode (`--feed csv`, no `--live`, no orders) alongside the recorder.
+
+### Prerequisites on the Oracle host
+1. Repo cloned at `~/Trading` (i.e. `/home/ubuntu/Trading`) with `.venv` + `.env` (API keys; `.env` needed for the `venue_verify.py run` one-shot which signs private reads).
+2. Deploy `coindcx-venue.service` (below) — the REST venue recorder writing `reports/coindcx_venue.csv`. This is a SEPARATE service from the microstructure `recorder-btc/eth/sol` units (which write `ticks_*.csv`); it must run before the paper-trader.
+
+### Deploy
+```bash
+sudo cp deploy/coindcx-venue.service deploy/carry-paper.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now coindcx-venue.service
+sudo systemctl enable --now carry-paper.service
+sudo journalctl -u carry-paper.service -f
+```
+
+### Definitive Phase 0 venue verdict (one-shot, same host — CSV present)
+```bash
+cd ~/Trading
+.venv/bin/python scripts/venue_verify.py run
+cat reports/venue_verify.json   # verdict: PASS -> Phase 0 done, --live unlocked for Phase 2
+                                 # fx_conversion FAIL -> redesign_required, hedge-redesign mandated
+```
+
+### Success criteria (7-14d)
+```bash
+cd ~/Trading
+.venv/bin/python scripts/paper_check.py reports/carry_paper.csv reports/carry_trader_state.json 100000 14
+```
+PASS on all 5 criteria -> Phase 2 small-real unlocked. See spec §"Success criteria".
+
+### Notes
+- Paper mode places NO orders. `--live` is NOT set; the Phase 0 gate does not block paper.
+- State persists across restarts (`reports/carry_trader_state.json`); `Restart=always` resumes.
+- Recorder MUST run first (the unit `After=` it, but confirm `reports/coindcx_venue.csv` is growing).
+- Kill-switch: `reports/carry_trader.HALT` → flatten all + halt. State reconciled against exchange on restart.

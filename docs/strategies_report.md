@@ -2080,3 +2080,150 @@ See [[post-conclusion-followups]] (§29 — the FX-leg crux that motivated this)
 [[carry-funding-regime-walkforward]] (§27 — the standing edge verdict),
 [[microstructure-feed-unblocked]] (the recorder on Oracle Cloud, the CSV
 source for probes 4 + 6).
+
+## §33. Phase 1 paper-trader — two-feed paper run + operational validation gate (sub-project 5)
+
+### 33.1 Purpose + no-orders constraint
+
+Phase 0 (§32) built the venue-verify gate but left the carry deploy
+**not deployed**: the paper feed was a stub, paper PnL a placeholder, and no
+live `venue_verify.py run` had executed. Phase 1 closes those gaps **without
+risking capital**: wire the stub paper feed to real CoinDCX data, replace the
+placeholder equity with real paper-PnL accounting, run 7-14d on the Oracle
+host (paper, no orders), and produce the definitive Phase 0 verdict by
+running `venue_verify.py run` where the CSV lives. This is **operational
+validation**, not edge re-confirmation — §20 already proved the edge; Phase 1
+proves the loop runs end-to-end on the live venue.
+
+Paper mode places **no orders**: `live=False`, `client=None` → `_enter_short`
+sets `qty=0.0`, logs only. The Phase 0 venue gate is `--live`-only and does
+not block paper. Phase 2 small-real remains gated behind Phase 0 PASS + Phase
+1 operational-validation success.
+
+### 33.2 The two-feed design (one `FeedSample` contract)
+
+`FeedSample(ts, fr, efr, basis_bps, spot_price, usdtinr)` — unchanged from
+sub-project 1. Two implementations, selected by `main()`'s new `--feed
+{rest,csv}` (default `rest`); `--live` forces `csv` (live runs on Oracle where
+the CSV exists) and keeps the Phase 0 gate.
+
+**REST feed (`--feed rest`, dev / this Windows box):** `_paper_feed()` reuses
+`scripts/coindcx_venue_recorder.py::sample()` — public REST, no auth, stdlib
+`urllib`. That function already fetches `futures_rt()` (PUB
+`/market_data/v3/current_prices/futures/rt`) + `spot_prices()`
+(`/exchange/ticker` → BTCINR/USDTINR) and computes
+`basis_bps = (mp/(spot_inr/usdtinr) - 1)*1e4`. `_paper_feed()` takes the BTC
+row → `FeedSample`; on `sample()` failure or missing BTC row → `None` (the
+existing feed-outage path). **No new fetch code.**
+
+**CSV feed (`--feed csv`, Oracle):** `csv_feed()` extracted from the existing
+`_live_feed()` body — reads the last row of `reports/coindcx_venue.csv` →
+`FeedSample`. Same contract. The venue recorder writes this CSV 60s-polled.
+Missing/empty/parse-error → `None` → outage path.
+
+### 33.3 Paper-PnL accounting (replaces the placeholder equity)
+
+The sub-project-1 `_mark_equity` was a `ponytail: placeholder` deferring real
+MTM to Phase 2. Phase 1 replaces it with real accrual-based paper equity so
+the 7-14d run produces a meaningful carry-income number on the live venue.
+
+**Funding accrual at 8h marks:** CoinDCX settles funding every 8h
+(00:00/08:00/16:00 UTC — `FUNDING_MARK_S = 8*3600`; the accrual keys on
+`ts - (ts % FUNDING_MARK_S)`). When the feed's `ts` crosses a mark while
+`state.side == -1`, accrue `accrued_funding += qty * fr_at_mark * entry_spot`.
+This is the real CoinDCX carry income (vs the §20 Binance proxy); the 7-14d
+rate is compared to ~7%/yr as a sanity check, not a re-proof. A mark crossing
+missed by a feed gap accrues on the first post-gap `fr` (rate-in-force at
+resumption) — honest, not fabricated.
+
+**Basis MTM:** delta-neutral cancels the BTC price leg; the residual is the
+FX/basis leg. `basis_mtm = qty * ((basis_bps - entry_basis_bps)/1e4) *
+entry_spot` (0 if flat), so the equity curve reflects the §29 FX-leg leak
+honestly. `basis_bps > 100` → basis-stop fires (unchanged).
+
+**Equity + DD:** `equity = peak_equity` if flat, else
+`peak_equity + accrued_funding + basis_mtm`. DD halt (25%) + basis-stop
+(100bps) + flatten now drive off this real paper equity. Paper "flatten" =
+`state.side = 0`, log the exit + realized paper PnL. No order. `TraderState`
+gained four persisted fields (`accrued_funding`, `basis_mtm`, `last_mark_ts`,
+`entry_basis_bps`); `_load_state` is field-tolerant (`d.pop("corrupt")` before
+the `__dataclass_fields__` filter) so old sub-project-1 state files load with
+defaults.
+
+### 33.4 Paper ledger + 5-criteria gate (`paper_check.py`)
+
+Append-only `reports/carry_paper.csv`, one row per state-changing event or
+accrual: `ts, event, side, fr, efr, basis_bps, accrued_funding, equity`.
+Events: `ENTER_SHORT`, `FUNDING_ACCRUE`, `BASIS_STOP`, `FLATTEN`, `DD_HALT`,
+`FEED_OUTAGE` — all guarded `if not live` (never written in a real run). This
+is the success-criteria evidence.
+
+`scripts/paper_check.py` reads the ledger + state and emits the verdict
+against five criteria over a contiguous 7-14d window:
+1. **zero_faults** — no `DD_HALT`, not `halted_orphan`, not corrupt.
+2. **feed_live** — `FEED_OUTAGE` < 5% of polls.
+3. **signal_fired** — ≥1 `ENTER_SHORT` + ≥1 `FLATTEN` on funding-band
+   crossings (`band=0.0002`).
+4. **funding_nonneg** — `accrued_funding ≥ 0`; annualized within an order of
+   magnitude of the §20 ~7%/yr proxy (sanity, not proof).
+5. **state_clean** — not halted.
+
+PASS on all five → Phase 2 small-real unlocked. The perp carries **no 1% TDS**
+(TDS is spot-sell only); the spot-leg TDS on sell is a known §29 cost not
+simulated in paper (paper never sells; it accrues funding) — recorded as a
+caveat.
+
+### 33.5 Oracle deploy + definitive Phase 0
+
+Two systemd units committed (mirror the microstructure recorder pattern:
+`User=ubuntu`, `WorkingDirectory=/home/ubuntu/Trading`, `Restart=always`):
+- `deploy/coindcx-venue.service` — the REST venue recorder
+  (`scripts/coindcx_venue_recorder.py`, public endpoints, no auth, no `.env`),
+  writing `reports/coindcx_venue.csv` 60s-polled. A **separate** service from
+  the microstructure `recorder-btc/eth/sol` units (which write `ticks_*.csv`).
+- `deploy/carry-paper.service` — `python scripts/carry_trader.py --feed csv
+  --pair B-BTC_USDT --spot-pair BTCINR --leverage 3` (paper, no `--live`),
+  `After=coindcx-venue.service`, state persists across restarts.
+
+`deploy/README.md` documents the recorder-first deploy order, the one-shot
+`venue_verify.py run` (definitive Phase 0 verdict — probes 4+6 read the CSV
+present on the host), and the `paper_check.py` success-criteria command. If
+`fx_conversion` FAILs → `redesign_required: true` → hedge-redesign
+sub-project mandated (per §32); Phase 1 paper continues for operational
+validation only, the paper PnL noting the measured FX leak.
+
+### 33.6 Implementation status
+
+Sub-project 5 built (7-task TDD plan, all tasks review-clean):
+- Task 1: `--feed {rest,csv}` + REST paper feed (reuses `recorder.sample()`)
+  + `csv_feed` extracted from `_live_feed`; `--live` gate byte-identical.
+- Task 2: `TraderState` +4 paper-PnL fields + field-tolerant loader.
+- Task 3: 8h funding accrual + basis MTM + real `_mark_equity`.
+- Task 4: paper ledger `carry_paper.csv` + 6 event logs.
+- Task 5: `paper_check.py` 5-criteria verdict.
+- Task 6: Oracle systemd units (paper-trader + venue recorder) + deploy README.
+
+`carry_trader.py` `__main__` self-check: 8 OK lines
+(signal/faults/reconcile/sign/tilt/venue/feed/paper-pnl), all paths exercised
+offline (mocked `sample()`, simulated 8h mark, no network). `paper_check.py`
+`__main__`: pass-case + DD_HALT fail-case. No live calls in any self-check.
+
+### 33.7 Conclusion
+
+Phase 1 ships the paper-trader as a deployable, instrumented loop: real
+CoinDCX funding accrual + basis MTM on the live venue, an append-only evidence
+ledger, and a data-driven 5-criteria gate to Phase 2. The deploy is
+**artifact-ready** — the user runs the Oracle deploy (recorder-first, then
+paper-trader, then the one-shot `venue_verify.py run`). No paper run is
+executed in this environment (no Oracle host here); the 7-14d result +
+definitive Phase 0 verdict are the next data points, expected from the
+recorder host. The carry deploy remains NOT live — now gated behind (a) a
+live Phase 0 PASS, (b) Phase 1 clean paper ≥7d on all five criteria, (c) §27's
+standing verdict that carry is funding-regime-dependent, not a robust edge.
+The tilt slot stays sealed `NoTilt` ([[regime-gate-tilt-sweep]], §31).
+
+See [[funding-carry-band]] (§20 — the carry edge Phase 1 operationally
+validates), [[post-conclusion-followups]] (§29 — FX-leg + cost model), §32
+(the Phase 0 gate run on the same host), [[microstructure-feed-unblocked]]
+(the Oracle recorder host Phase 1 deploys alongside),
+[[regime-gate-tilt-sweep]] (§31 — NoTilt sealed).

@@ -11,8 +11,12 @@ from pathlib import Path
 
 import numpy as np
 
+from scripts.coindcx_venue_recorder import sample as _recorder_sample
+
 log = logging.getLogger("carry_trader")
 REPORTS = Path("reports")
+PAPER_LEDGER = REPORTS / "carry_paper.csv"
+FUNDING_MARK_S = 8 * 3600  # CoinDCX funding settlement interval (00:00/08:00/16:00 UTC)
 
 
 def decide(rate_history: np.ndarray, band: float, side: int) -> str:
@@ -46,6 +50,10 @@ class TraderState:
     halted: bool = False
     halted_orphan: bool = False
     last_feed_ts: int = 0
+    accrued_funding: float = 0.0   # paper PnL: cumulative funding income at 8h marks
+    basis_mtm: float = 0.0         # paper PnL: unrealized basis/FX drift on open position
+    last_mark_ts: int = 0          # last 8h funding-mark floor processed (for accrual)
+    entry_basis_bps: float = 0.0   # basis at entry (for MTM)
     corrupt: bool = False  # state.json missing/corrupt at load -> halt, don't guess (SPEC rule 5)
 
 
@@ -90,9 +98,17 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
             await asyncio.sleep(cfg.get("poll_s", 60))
             continue
         state.last_feed_ts = s.ts
+        # paper PnL: accrue funding at 8h marks (replaces placeholder equity)
+        marks = _accrue_funding(state, s)
+        if marks:
+            gap = marks > 1
+            log.info("FUNDING_ACCRUE total=%s fr=%s%s", state.accrued_funding, s.fr,
+                     f" gap={marks}marks" if gap else "")
+            if not live: _paper_ledger(state, "FUNDING_ACCRUE_GAP" if gap else "FUNDING_ACCRUE", s)
         # basis-stop (60s): force flatten on squeeze spike
         if state.side != 0 and s.basis_bps > cfg["basis_stop_bps"]:
             log.warning("basis-stop fire basis=%sbps -> flatten", s.basis_bps)
+            if not live: _paper_ledger(state, "BASIS_STOP", s)
             await _flatten_all(state, client, live, cfg); continue
         # DD halt
         eq = _mark_equity(state, s)
@@ -100,6 +116,7 @@ async def run_loop(cfg: dict, client=None, feed=None, state_path=None, live=Fals
         from scripts.risk_budget import max_dd_halt
         if max_dd_halt(eq, state.peak_equity, cfg["max_dd"]):
             log.warning("DD halt eq=%.0f peak=%.0f -> flatten+halt", eq, state.peak_equity)
+            if not live: _paper_ledger(state, "DD_HALT", s)
             await _flatten_all(state, client, live, cfg); state.halted = True
             _save_state(state_path, state); break
         # signal
@@ -133,7 +150,8 @@ def _load_state(path) -> TraderState:
             log.warning("state file corrupt -> flag corrupt")
             st = TraderState(); st.corrupt = True; return st
         d.pop("corrupt", None)  # corrupt is a transient load-time signal; never reload as corrupt
-        return TraderState(**d)
+        valid = {k: v for k, v in d.items() if k in TraderState.__dataclass_fields__}
+        return TraderState(**valid)
     log.warning("state file missing -> flag corrupt")
     st = TraderState(); st.corrupt = True; return st
 
@@ -143,11 +161,60 @@ def _save_state(path, st: TraderState) -> None:
 
 
 def _mark_equity(st: TraderState, s: FeedSample) -> float:
-    # delta-neutral: perp PnL + spot PnL cancel on price; income = funding accrued (proxy via fr*qty)
-    if st.side == 0: return st.peak_equity
-    # ponytail: placeholder equity (peak + funding proxy); real MTM deferred to Phase 2 live
-    funding = st.qty * s.fr * st.entry_spot
-    return st.peak_equity + funding
+    # paper PnL equity: peak + accrued funding (8h marks) + unrealized basis/FX MTM.
+    # Replaces the sub-project-1 placeholder. Real MTM deferred to Phase 2 live fills in
+    # the perp/spot leg fills; here basis_mtm is the delta-neutral residual (the §29 FX leg).
+    if st.side == 0:
+        return st.peak_equity
+    return st.peak_equity + st.accrued_funding + _basis_mtm(st, s)
+
+
+def _accrue_funding(st: TraderState, s: FeedSample) -> int:
+    """Accrue carry income at 8h funding marks. First sample seeds last_mark_ts (no accrue).
+    A mark crossing while short -> accrued_funding += qty * fr * entry_spot (ONCE, at the
+    resumption fr — a multi-mark gap under-counts honestly rather than fabricating intermediate
+    rates). Returns marks crossed this call: 0 = none, 1 = normal, >1 = feed gap spanned marks
+    (caller logs a FUNDING_ACCRUE_GAP flag per spec error-handling #3)."""
+    if st.side != -1:
+        return 0
+    mark = s.ts - (s.ts % FUNDING_MARK_S)
+    if st.last_mark_ts == 0:
+        st.last_mark_ts = mark
+        return 0
+    if mark > st.last_mark_ts:
+        marks = (mark - st.last_mark_ts) // FUNDING_MARK_S
+        st.accrued_funding += st.qty * s.fr * st.entry_spot
+        st.last_mark_ts = mark
+        return marks
+    return 0
+
+
+def _basis_mtm(st: TraderState, s: FeedSample) -> float:
+    """Unrealized basis/FX MTM on the open delta-neutral position (INR). 0 when flat."""
+    if st.side == 0 or st.qty == 0.0:
+        return 0.0
+    return st.qty * ((s.basis_bps - st.entry_basis_bps) / 1e4) * st.entry_spot
+
+
+def _paper_ledger(st: TraderState, event: str, s: FeedSample | None,
+                  path: Path = PAPER_LEDGER) -> None:
+    """Append one row to the paper ledger (success-criteria evidence). Best-effort:
+    a write failure must never crash the loop. s=None -> fr/efr/basis blank."""
+    import csv
+    try:
+        new = not path.exists()
+        with open(path, "a", newline="") as f:
+            w = csv.writer(f)
+            if new:
+                w.writerow(["ts", "event", "side", "fr", "efr", "basis_bps",
+                            "accrued_funding", "equity"])
+            w.writerow([int(time.time()), event, st.side,
+                        s.fr if s else "", s.efr if s else "",
+                        s.basis_bps if s else "",
+                        round(st.accrued_funding, 6),
+                        round(_mark_equity(st, s) if s else st.peak_equity, 6)])
+    except OSError as e:  # ledger is observational, never load-bearing
+        log.warning("paper ledger write failed: %s", e)
 
 
 async def _enter_short(st, s, client, live, cfg):
@@ -171,9 +238,15 @@ async def _enter_short(st, s, client, live, cfg):
             st.halted = True; st.halted_orphan = True; st.side = 0; return
         st.qty = qty
     else:
-        st.qty = 0.0
+        # paper: notional qty for PnL accounting. The live guard above prevents the order;
+        # qty=0 would zero accrual/basis_mtm/equity for the whole run (§33.3). Order is
+        # guarded by `live and client is not None`, NOT by qty.
+        from scripts.risk_budget import position_size
+        st.qty = position_size(cfg["capital"], cfg["stop_fill_est"], cfg["risk_fraction"], cfg["leverage_cap"]) / s.spot_price
     st.side = -1; st.entry_perp = s.spot_price; st.entry_spot = s.spot_price
-    log.info("ENTER_SHORT qty=%s fr=%s", st.qty, s.fr)
+    st.entry_basis_bps = s.basis_bps; st.peak_equity = st.peak_equity or cfg["capital"]
+    log.info("ENTER_SHORT qty=%s fr=%s basis=%sbps", st.qty, s.fr, s.basis_bps)
+    if not live: _paper_ledger(st, "ENTER_SHORT", s)
 
 
 async def _flatten_all(st, client, live, cfg):
@@ -200,6 +273,7 @@ async def _flatten_all(st, client, live, cfg):
         await client.create_spot_order(side="sell", pair=cfg["spot_pair"],
                                         order_type="market_order", quantity=st.qty)
     st.side = 0; log.info("FLATTEN qty=%s", st.qty); st.qty = 0.0
+    if not live: _paper_ledger(st, "FLATTEN", None)
 
 
 async def _on_feed_outage(st, client, live, cfg):
@@ -209,6 +283,7 @@ async def _on_feed_outage(st, client, live, cfg):
     # ponytail: 2 missed polls -> flatten+halt; tune poll_s for longer grace
     if age > 2 * cfg.get("poll_s", 60) * 1000 and st.side != 0:
         log.warning("feed outage %dms -> flatten + halt", age)
+        if not live: _paper_ledger(st, "FEED_OUTAGE", None)
         await _flatten_all(st, client, live, cfg)
         st.halted = True
     return st
@@ -266,6 +341,83 @@ def demo() -> None:
     asyncio.run(_demo_sign())
     asyncio.run(_demo_tilt())
     asyncio.run(_demo_venue_gate())
+    asyncio.run(_demo_feed())
+    asyncio.run(_demo_paper_pnl())
+
+
+async def _demo_paper_pnl():
+    """8h funding accrual + basis MTM + real mark_equity (replaces placeholder)."""
+    # entry: short 0.1 BTC @ entry_spot 9_000_000, basis 10bps, peak=capital 100k
+    st = TraderState(side=-1, qty=0.1, entry_perp=9_000_000, entry_spot=9_000_000,
+                     peak_equity=100_000.0, entry_basis_bps=10.0, last_mark_ts=0)
+    m0 = 1700000000 - (1700000000 % (8 * 3600))   # current 8h mark floor
+    s_seed = FeedSample(ts=m0 + 60, fr=0.0003, efr=0.0003, basis_bps=10, spot_price=9_000_000, usdtinr=90)
+    # first sample seeds last_mark_ts, no accrue
+    assert _accrue_funding(st, s_seed) == 0 and st.accrued_funding == 0.0, "seed, no accrue"
+    assert st.last_mark_ts == m0, "last_mark_ts seeded"
+
+    # next mark crossed -> accrue qty*fr*entry_spot = 0.1*0.0003*9_000_000 = 270
+    m1 = m0 + 8 * 3600
+    s_mark = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=9_000_000, usdtinr=90)
+    assert _accrue_funding(st, s_mark) == 1, "mark crossed -> accrue"
+    assert abs(st.accrued_funding - 270.0) < 1e-6, st.accrued_funding
+    assert st.last_mark_ts == m1
+
+    # same mark, second sample -> no double accrue
+    assert _accrue_funding(st, FeedSample(ts=m1 + 120, fr=0.0003, efr=0.0003, basis_bps=15,
+                                          spot_price=9_000_000, usdtinr=90)) == 0
+    assert abs(st.accrued_funding - 270.0) < 1e-6, "no double accrue within same mark"
+
+    # multi-mark gap: feed outage spanned 2 marks -> accrue ONCE at resumption fr, return 2.
+    st_gap = TraderState(side=-1, qty=0.1, entry_spot=9_000_000, peak_equity=100_000.0,
+                         entry_basis_bps=10.0, last_mark_ts=m1)
+    m3 = m1 + 2 * 8 * 3600
+    s_gap = FeedSample(ts=m3 + 60, fr=0.0003, efr=0.0003, basis_bps=15,
+                       spot_price=9_000_000, usdtinr=90)
+    assert _accrue_funding(st_gap, s_gap) == 2, "2-mark gap -> return 2"
+    assert abs(st_gap.accrued_funding - 270.0) < 1e-6, "accrue once despite 2-mark gap"
+
+    # basis MTM: basis moved 10->15 bps -> qty*(5/1e4)*entry_spot = 0.1*0.0005*9_000_000 = 450
+    assert abs(_basis_mtm(st, s_mark) - 450.0) < 1e-6, _basis_mtm(st, s_mark)
+    # equity = peak + accrued + basis_mtm = 100_000 + 270 + 450 = 100_720
+    assert abs(_mark_equity(st, s_mark) - 100_720.0) < 1e-6, _mark_equity(st, s_mark)
+
+    # flat -> equity is peak only
+    flat = TraderState(side=0, peak_equity=100_000.0)
+    assert _mark_equity(flat, s_mark) == 100_000.0
+
+    # paper ledger: append-only, events recorded, header on new file.
+    import tempfile
+    ld = Path(tempfile.mkdtemp()) / "carry_paper.csv"
+    st2 = TraderState(side=-1, qty=0.1, entry_spot=9_000_000, peak_equity=100_000.0,
+                      entry_basis_bps=10.0, accrued_funding=270.0)
+    samp = FeedSample(ts=m1 + 60, fr=0.0003, efr=0.0003, basis_bps=15, spot_price=9_000_000, usdtinr=90)
+    _paper_ledger(st2, "ENTER_SHORT", samp, path=ld)
+    _paper_ledger(st2, "FUNDING_ACCRUE", samp, path=ld)
+    _paper_ledger(st2, "FEED_OUTAGE", None, path=ld)
+    import csv
+    rows = list(csv.DictReader(ld.read_text().splitlines()))
+    assert len(rows) == 3, rows
+    assert rows[0]["event"] == "ENTER_SHORT" and abs(float(rows[0]["accrued_funding"]) - 270.0) < 1e-6
+    assert rows[2]["event"] == "FEED_OUTAGE" and rows[2]["fr"] == "", rows[2]
+
+    # paper _enter_short: NOTIONAL qty (not 0) + peak init to capital. Regression guard for
+    # the F1 qty=0.0 zeroing bug. Ledger noop'd here (write path tested above).
+    st_ent = TraderState(side=0, peak_equity=0.0)
+    s_ent = FeedSample(ts=m0 + 60, fr=0.0003, efr=0.0003, basis_bps=10,
+                       spot_price=9_000_000, usdtinr=90)
+    _cfg = {"capital": 100_000, "stop_fill_est": 0.02, "risk_fraction": 0.05,
+            "leverage_cap": 5, "pair": "B-BTC_USDT", "spot_pair": "BTCINR"}
+    _orig_ledger = _paper_ledger
+    globals()["_paper_ledger"] = lambda *a, **k: None
+    try:
+        await _enter_short(st_ent, s_ent, client=None, live=False, cfg=_cfg)
+    finally:
+        globals()["_paper_ledger"] = _orig_ledger
+    assert st_ent.side == -1 and st_ent.qty > 0, (st_ent.side, st_ent.qty)
+    assert abs(st_ent.peak_equity - 100_000.0) < 1e-6, st_ent.peak_equity
+    assert st_ent.entry_basis_bps == 10.0
+    print("carry_trader paper-pnl OK")
 
 
 async def _demo_tilt():
@@ -321,6 +473,80 @@ async def _demo_venue_gate():
     assert load_gate(path=gate_file) is None, "missing gate should return None"
 
     print("carry_trader venue OK")
+
+
+async def _demo_feed():
+    """REST paper feed reuses recorder.sample(); csv_feed reads the recorder CSV.
+    --feed selection: rest (default) vs csv. Guards empty fr/basis -> None (outage)."""
+    import tempfile
+
+    # REST feed: mocked recorder.sample() -> BTC row -> FeedSample; empty fr -> None.
+    good = [{"ts": 1700000000, "sym": "BTC", "fr": 0.0003, "efr": 0.00031,
+             "mp": 30000, "ls": 30000, "spot_inr": 2700000, "usdtinr": 90,
+             "basis_bps": 11.1}]
+    # ponytail: patch sys.modules[__name__] not `import scripts.carry_trader as ct`:
+    # when run as `python scripts/carry_trader.py`, __main__ and scripts.carry_trader
+    # are distinct module objects; _paper_feed resolves _recorder_sample from its
+    # own module (__main__), so the mock must land there.
+    import sys
+    mod = sys.modules[__name__]
+    orig = mod._recorder_sample
+    mod._recorder_sample = lambda: good
+    try:
+        s = await _paper_feed()
+        assert s is not None and abs(s.fr - 0.0003) < 1e-12 and s.spot_price == 2700000, s
+        # empty fr -> outage (None)
+        mod._recorder_sample = lambda: [{"ts": 1, "sym": "BTC", "fr": None, "efr": None,
+                                         "mp": 1, "ls": 1, "spot_inr": "", "usdtinr": "",
+                                         "basis_bps": ""}]
+        assert await _paper_feed() is None, "empty fr should be outage"
+        # BTC row absent -> None
+        mod._recorder_sample = lambda: [{"ts": 1, "sym": "ETH", "fr": 0.0002, "efr": 0.0002,
+                                         "mp": 1, "ls": 1, "spot_inr": 1, "usdtinr": 1,
+                                         "basis_bps": 0}]
+        assert await _paper_feed() is None, "no BTC row -> None"
+    finally:
+        mod._recorder_sample = orig
+
+    # csv_feed: write a tmp CSV, read last row -> FeedSample; missing -> None.
+    td = Path(tempfile.mkdtemp())
+    csvp = td / "coindcx_venue.csv"
+    csvp.write_text("ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
+                    "1700000060,BTC,0.0004,0.0004,30000,30000,2700000,90,11.0\n")
+    s2 = await csv_feed(path=csvp)
+    assert s2 is not None and abs(s2.fr - 0.0004) < 1e-12 and s2.basis_bps == 11.0, s2
+    assert await csv_feed(path=td / "nope.csv") is None, "missing CSV -> None"
+    # regression: recorder interleaves BTC/ETH/SOL; csv_feed must take the last
+    # BTC row, NOT the literal last row (wrong spot_price/qty would poison PnL).
+    csvp.write_text("ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
+                    "1700000060,BTC,0.0004,0.0004,30000,30000,2700000,90,11.0\n"
+                    "1700000120,ETH,0.0002,0.0002,2000,2000,180000,90,5.0\n"
+                    "1700000180,SOL,0.0001,0.0001,100,100,9000,90,1.0\n")
+    s3 = await csv_feed(path=csvp)
+    assert s3 is not None and s3.fr == 0.0004 and s3.spot_price == 2700000.0, \
+        ("csv_feed must return last BTC row, not literal last row", s3)
+    # no BTC row at all -> None (feed-outage), matching _paper_feed contract
+    csvp.write_text("ts,sym,fr,efr,mp,ls,spot_inr,usdtinr,basis_bps\n"
+                    "1700000060,ETH,0.0002,0.0002,2000,2000,180000,90,5.0\n")
+    assert await csv_feed(path=csvp) is None, "no BTC row -> None"
+
+    # field-tolerant loader: old state (missing new fields) + unknown keys -> loads with defaults.
+    old = td / "old_state.json"
+    old.write_text(json.dumps({"side": -1, "qty": 0.1, "entry_perp": 100, "entry_spot": 100,
+                               "peak_equity": 100000, "band": 0.0002, "halted": False,
+                               "halted_orphan": False, "last_feed_ts": 1,
+                               "future_unknown_key": "x"}))  # no accrued_funding/etc + unknown key
+    st = _load_state(old)
+    assert st.side == -1 and abs(st.qty - 0.1) < 1e-9, (st.side, st.qty)
+    assert st.accrued_funding == 0.0 and st.basis_mtm == 0.0 and st.last_mark_ts == 0, \
+        "missing fields must default"
+    assert st.entry_basis_bps == 0.0
+    # corrupt JSON -> corrupt flag (existing behavior preserved)
+    bad = td / "bad_state.json"
+    bad.write_text("{not json")
+    stb = _load_state(bad)
+    assert stb.corrupt is True, "corrupt JSON -> corrupt flag"
+    print("carry_trader feed OK")
 
 
 async def _demo_sign():
@@ -380,23 +606,51 @@ async def _demo_reconcile():
     print("carry_trader reconcile OK")
 
 
-async def _paper_feed():
-    await asyncio.sleep(0)  # Task 7 / deploy wires real paper feed
+async def _paper_feed() -> FeedSample | None:
+    """REST paper feed (dev). Reuses coindcx_venue_recorder.sample() (public, no auth).
+    Takes the BTC row -> FeedSample. Empty fr/basis or no BTC row -> None (feed-outage)."""
+    rows = _recorder_sample()
+    for r in rows:
+        if r.get("sym") != "BTC":
+            continue
+        fr = r.get("fr")
+        bb = r.get("basis_bps")
+        sinr = r.get("spot_inr")
+        uinr = r.get("usdtinr")
+        if fr in (None, "") or bb in (None, "") or sinr in (None, "") or uinr in (None, ""):
+            return None
+        return FeedSample(ts=int(r["ts"]), fr=float(fr), efr=float(r.get("efr") or 0.0),
+                          basis_bps=float(bb), spot_price=float(sinr), usdtinr=float(uinr))
+    return None
 
 
-async def _live_feed():
-    # read latest row from reports/coindcx_venue.csv (recorder writes it) -> FeedSample
+async def csv_feed(path: Path | None = None) -> FeedSample | None:
+    """CSV paper/live feed (Oracle). Reads the last row of reports/coindcx_venue.csv
+    (recorder writes it 60s-polled) -> FeedSample. Missing/empty -> None (outage)."""
     import csv
-    p = REPORTS / "coindcx_venue.csv"
+    p = path or (REPORTS / "coindcx_venue.csv")
     if not p.exists():
         return None
     rows = list(csv.DictReader(p.read_text().splitlines()))
     if not rows:
         return None
-    r = rows[-1]
-    return FeedSample(ts=int(float(r["ts"])), fr=float(r["fr"]), efr=float(r["efr"]),
-                      basis_bps=float(r["basis_bps"]), spot_price=float(r["spot_inr"]),
-                      usdtinr=float(r["usdtinr"]))
+    # take the last BTC row, not the literal last row: the recorder interleaves
+    # BTC/ETH/SOL, so rows[-1] is often a non-BTC asset whose fr/spot_price
+    # (SOL ~97 vs BTC ~78700) would poison qty + PnL. Mirrors _paper_feed's
+    # sym=="BTC" filter; no BTC row -> None (feed-outage), same as REST.
+    r = None
+    for row in reversed(rows):
+        if row.get("sym") == "BTC":
+            r = row
+            break
+    if r is None:
+        return None
+    try:
+        return FeedSample(ts=int(float(r["ts"])), fr=float(r["fr"]), efr=float(r["efr"]),
+                          basis_bps=float(r["basis_bps"]), spot_price=float(r["spot_inr"]),
+                          usdtinr=float(r["usdtinr"]))
+    except (KeyError, ValueError, TypeError):
+        return None
 
 
 def main() -> None:
@@ -408,6 +662,8 @@ def main() -> None:
     ap.add_argument("--pair", default="B-BTC_USDT")
     ap.add_argument("--spot-pair", default="BTCINR")
     ap.add_argument("--leverage", type=int, default=3)
+    ap.add_argument("--feed", choices=["rest", "csv"], default="rest",
+                    help="paper feed source: rest (dev, public REST) or csv (Oracle, recorder CSV)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = {"band": args.band, "capital": args.capital, "stop_fill_est": 0.02,
@@ -435,9 +691,9 @@ def main() -> None:
                   "Re-run: python scripts/venue_verify.py run"); return
         from app.exchange.coindcx import CoinDCXClient
         client = CoinDCXClient()
-        feed_fn = _live_feed
+        feed_fn = csv_feed  # --live forces csv (live runs on Oracle where the CSV exists)
     else:
-        feed_fn = _paper_feed
+        feed_fn = _paper_feed if args.feed == "rest" else csv_feed
     asyncio.run(run_loop(cfg, client=client, feed=feed_fn, live=args.live))
 
 

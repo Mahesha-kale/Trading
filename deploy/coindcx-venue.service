@@ -1,0 +1,16 @@
+[Unit]
+Description=CoinDCX funding+basis forward recorder (venue verify §20/§23)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Trading
+Environment=PYTHONPATH=/home/ubuntu/Trading
+ExecStart=/home/ubuntu/Trading/.venv/bin/python /home/ubuntu/Trading/scripts/coindcx_venue_recorder.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
