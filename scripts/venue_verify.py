@@ -186,7 +186,9 @@ async def usdt_wallet(client) -> ProbeResult:
         rows = wallets if isinstance(wallets, list) else [wallets]
         usdt = None
         for w in rows:
-            cur = str(w.get("currency") or w.get("asset") or "").upper()
+            # CoinDCX derivatives wallets use `currency_short_name` (not currency/asset).
+            cur = str(w.get("currency_short_name") or w.get("currency")
+                       or w.get("asset") or "").upper()
             if cur == "USDT":
                 usdt = w
                 break
@@ -196,7 +198,7 @@ async def usdt_wallet(client) -> ProbeResult:
         bal = float(usdt.get("balance") or 0)
         passed = bal > 0
         return ProbeResult("usdt_wallet", passed,
-                           {"usdt_balance": bal, "locked": usdt.get("locked")},
+                           {"usdt_balance": bal, "locked": usdt.get("locked_balance")},
                            None if passed else
                            "USDT wallet balance=0 — fund it via account UI (not API)")
     except Exception as e:  # noqa: BLE001
@@ -346,18 +348,21 @@ def demo() -> None:
     # usdt_wallet probe: funded -> PASS; absent/zero -> FAIL (expected blocker)
     class WalletClient(FakeClient):
         async def get_wallets(self):
-            return [{"currency": "INR", "balance": 50000},
-                    {"currency": "USDT", "balance": 120.0, "locked": 0}]
+            # CoinDCX derivatives wallets shape: currency_short_name + balance + locked_balance
+            return [{"currency_short_name": "INR", "balance": "50000", "locked_balance": "0"},
+                    {"currency_short_name": "USDT", "balance": "120.0", "locked_balance": "0"}]
     rw = asyncio.run(usdt_wallet(WalletClient()))
     assert rw.passed and rw.detail["usdt_balance"] == 120.0, rw
 
     class NoUsdtWallet(FakeClient):
-        async def get_wallets(self): return [{"currency": "INR", "balance": 50000}]
+        async def get_wallets(self):
+            return [{"currency_short_name": "INR", "balance": "50000", "locked_balance": "0"}]
     rw2 = asyncio.run(usdt_wallet(NoUsdtWallet()))
     assert not rw2.passed and "fund USDT" in (rw2.error or ""), rw2
 
     class ZeroUsdtWallet(FakeClient):
-        async def get_wallets(self): return [{"currency": "USDT", "balance": 0}]
+        async def get_wallets(self):
+            return [{"currency_short_name": "USDT", "balance": "0", "locked_balance": "0"}]
     rw3 = asyncio.run(usdt_wallet(ZeroUsdtWallet()))
     assert not rw3.passed and "balance=0" in (rw3.error or ""), rw3
     # probe 4 & 6: funding_accrual + basis_proxy on a synthetic CSV in a tmp
