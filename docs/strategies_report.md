@@ -2177,13 +2177,13 @@ caveat.
 
 Two systemd units committed (mirror the microstructure recorder pattern:
 `User=ubuntu`, `WorkingDirectory=/home/ubuntu/Trading`, `Restart=always`):
-- `deploy/coindcx-venue-recorder.service` — the REST venue recorder
+- `deploy/coindcx-venue.service` — the REST venue recorder
   (`scripts/coindcx_venue_recorder.py`, public endpoints, no auth, no `.env`),
   writing `reports/coindcx_venue.csv` 60s-polled. A **separate** service from
   the microstructure `recorder-btc/eth/sol` units (which write `ticks_*.csv`).
 - `deploy/carry-paper.service` — `python scripts/carry_trader.py --feed csv
   --pair B-BTC_USDT --spot-pair BTCINR --leverage 3` (paper, no `--live`),
-  `After=coindcx-venue-recorder.service`, state persists across restarts.
+  `After=coindcx-venue.service`, state persists across restarts.
 
 `deploy/README.md` documents the recorder-first deploy order, the one-shot
 `venue_verify.py run` (definitive Phase 0 verdict — probes 4+6 read the CSV

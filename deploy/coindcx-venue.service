@@ -1,5 +1,5 @@
 [Unit]
-Description=CoinDCX venue recorder (REST poller, funding+basis to coindcx_venue.csv)
+Description=CoinDCX funding+basis forward recorder (venue verify §20/§23)
 After=network-online.target
 Wants=network-online.target
 

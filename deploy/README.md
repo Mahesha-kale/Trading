@@ -39,15 +39,15 @@ Runs the carry trader in PAPER mode (`--feed csv`, no `--live`, no orders) along
 
 ### Prerequisites on the Oracle host
 1. Repo cloned at `~/Trading` (i.e. `/home/ubuntu/Trading`) with `.venv` + `.env` (API keys; `.env` needed for the `venue_verify.py run` one-shot which signs private reads).
-2. Deploy `coindcx-venue-recorder.service` (below) — the REST venue recorder writing `reports/coindcx_venue.csv`. This is a SEPARATE service from the microstructure `recorder-btc/eth/sol` units (which write `ticks_*.csv`); it must run before the paper-trader.
+2. Deploy `coindcx-venue.service` (below) — the REST venue recorder writing `reports/coindcx_venue.csv`. This is a SEPARATE service from the microstructure `recorder-btc/eth/sol` units (which write `ticks_*.csv`); it must run before the paper-trader.
 
 ### Deploy
 ```bash
-sudo cp deploy/coindcx-venue-recorder.service deploy/carry-paper.service /etc/systemd/system/
+sudo cp deploy/coindcx-venue.service deploy/carry-paper.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now coindcx-venue-recorder.service
+sudo systemctl enable --now coindcx-venue.service
 sudo systemctl enable --now carry-paper.service
-sudo journalctl -u carry-paper.service -f   # or tail /var/log/carry-paper.log
+sudo journalctl -u carry-paper.service -f
 ```
 
 ### Definitive Phase 0 venue verdict (one-shot, same host — CSV present)
