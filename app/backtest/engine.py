@@ -64,6 +64,12 @@ class BacktestConfig:
     maker_on_limit: bool = False  # if true, limit entries pay maker
     regime_sma: int | None = None  # block new longs while close < SMA(N); trailing still exits
     funding_rates: "pd.Series | None" = None  # signed per-8h funding history
+    # risk-gate overrides (default = settings). Set max_drawdown=0.0 / max_positions=99
+    # for an ungated raw-pattern backtest (the gate truncates trades after a 20% DD,
+    # conflating pattern edge with risk control — §35 confound).
+    max_drawdown: float = settings.max_drawdown
+    max_positions: int = settings.max_positions
+    max_daily_loss: float = settings.max_daily_loss
     # (index=8h mark UTC, value=signed rate). If given, funding at each 8h event
     # uses the asof rate (most recent <= bar ts) instead of the flat funding_rate
     # -- models real dynamic/signed funding (negative in bears: longs receive).
@@ -92,7 +98,8 @@ class Backtester:
 
         equity = cfg.initial_capital
         pos: Position | None = None
-        risk = RiskManager(equity)
+        risk = RiskManager(equity, max_drawdown=cfg.max_drawdown,
+                          max_positions=cfg.max_positions, max_daily_loss=cfg.max_daily_loss)
         eq_points: list[tuple[pd.Timestamp, float]] = []
         next_funding = df.index[0] + FUNDING_INTERVAL
 
@@ -161,11 +168,12 @@ class Backtester:
                     is_long = long_open
                     side = "long" if is_long else "short"
                     entry = fill_price(nxt["open"], is_long)  # long buys up, short sells down
-                    stop = self._stop(entry, atr_series.iloc[i], cfg, side)
-                    # take_profit is strategy-defined for longs (reversion); trend
-                    # shorts ride the trailer -> no TP on the short side.
+                    stop = self._stop(entry, atr_series.iloc[i], cfg, side, df, i)
+                    # take_profit is strategy-defined (reversion kind); honored on both
+                    # sides. Trend shorts ride the trailer because trend strategies'
+                    # take_profit returns None (base default) -> tp stays None for them.
                     tp = (self.strategy.take_profit(df, i)
-                          if (hasattr(self.strategy, "take_profit") and is_long) else None)
+                          if hasattr(self.strategy, "take_profit") else None)
                     lev = risk.check_leverage(cfg.leverage)
                     qty = risk.position_size(entry, stop, lev, atr_series.iloc[i])
                     if qty > 0:
@@ -180,7 +188,7 @@ class Backtester:
                             pos = Position("long", entry, qty, lev, ts, stop=stop, take_profit=tp,
                                             trailing_atr=trail, high_water=entry, entry_fee=fee)
                         else:
-                            pos = Position("short", entry, qty, lev, ts, stop=stop, take_profit=None,
+                            pos = Position("short", entry, qty, lev, ts, stop=stop, take_profit=tp,
                                             trailing_atr=trail, low_water=entry, entry_fee=fee)
                         risk.state.open_positions = 1
 
@@ -203,7 +211,14 @@ class Backtester:
         return {"metrics": metrics, "equity": self.equity_curve, "trades": self.trades}
 
     # --- helpers ---
-    def _stop(self, entry: float, a: float, cfg: BacktestConfig, side: str = "long") -> float:
+    def _stop(self, entry: float, a: float, cfg: BacktestConfig, side: str = "long",
+              df: pd.DataFrame | None = None, entry_idx: int | None = None) -> float:
+        # strategy-defined absolute stop (e.g. ORB's opening-range level) wins over
+        # the generic ATR/% stop. base.stop_loss returns None -> falls through.
+        if df is not None and entry_idx is not None and hasattr(self.strategy, "stop_loss"):
+            sl = self.strategy.stop_loss(df, entry_idx)
+            if sl is not None and pd.notna(sl):
+                return float(sl)
         s = 1 if side == "long" else -1
         if pd.notna(a) and a > 0 and cfg.use_trailing:
             return entry - s * cfg.trailing_mult * a
