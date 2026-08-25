@@ -2,12 +2,14 @@
 perp + spot venue truth against the carry deploy's assumptions, then write
 reports/venue_verify.json as the --live gate. No orders (no testnet exists).
 
-7 probes: auth_liveness, instrument_perp, instrument_spot, funding_accrual,
-fx_conversion, basis_proxy, rate_limit. See spec
-docs/superpowers/specs/2026-08-25-phase0-venue-verify-design.md.
+--margin usdt (redesign): 6 venue probes (auth, perp, spot[BTCUSDT], funding,
+basis, rate) + usdt_wallet (USDT-path "no FX leak" equivalent). fx_conversion
+is an INR-path probe, NOT run for USDT (USDT margin has no INR conversion).
+--margin inr (legacy): the 7 above incl fx_conversion (§29 crux).
+See spec docs/superpowers/specs/2026-08-25-usdt-carry-redesign-design.md (comp 3).
 
-Usage: python scripts/venue_verify.py run   (live probes -> reports/venue_verify.json)
-       python scripts/venue_verify.py        (demo self-check, no network)
+Usage: python scripts/venue_verify.py run --margin usdt  (live -> reports/venue_verify.json)
+       python scripts/venue_verify.py                    (demo self-check, no network)
 """
 from __future__ import annotations
 
@@ -77,19 +79,20 @@ async def instrument_perp(client) -> ProbeResult:
         return ProbeResult("instrument_perp", False, error=f"{type(e).__name__}: {e}")
 
 
-# --- probe 3: spot leg metadata (BTCINR) ---
-async def instrument_spot(client) -> ProbeResult:
-    """BTCINR spot hedge-leg metadata. Futures instrument endpoint won't have spot;
-    fall back to ticker liveness + a documented min-qty if no spot-instruments API."""
+# --- probe 3: spot leg liveness (BTCUSDT for USDT redesign; BTCINR legacy) ---
+async def instrument_spot(client, spot_pair: str = "BTCUSDT") -> ProbeResult:
+    """Spot hedge-leg liveness for `spot_pair`. Spot fee is doc-derived (~0.169%
+    +GST, §29 BTCINR-derived) — CoinDCX exposes no public spot-fee endpoint, so
+    this verifies ticker liveness + records the doc fee; true fee confirmation is
+    a forward Phase-2-fill caveat (component 4)."""
     try:
-        px = await client.get_last_price("BTCINR")  # spot ticker liveness
-        # ponytail: CoinDCX spot min-qty for BTCINR from support docs; re-check live.
-        # If a public spot-instruments endpoint is found, replace this constant.
-        DOC_MIN_QTY = 0.001
-        detail = {"last_price": px, "doc_min_quantity": DOC_MIN_QTY,
-                  "note": "spot-instruments endpoint unverified; using documented min_qty"}
+        px = await client.get_last_price(spot_pair)
+        DOC_SPOT_FEE_PCT = 0.169  # §29 BTCINR-derived; verify BTCUSDT via real fill in Phase 2
+        detail = {"last_price": px, "spot_pair": spot_pair,
+                  "doc_spot_fee_pct": DOC_SPOT_FEE_PCT,
+                  "note": "spot fee doc-derived; confirm via real fill in Phase 2"}
         return ProbeResult("instrument_spot", px > 0, detail,
-                           None if px > 0 else "BTCINR ticker returned 0/None")
+                           None if px > 0 else f"{spot_pair} ticker returned 0/None")
     except Exception as e:  # noqa: BLE001
         return ProbeResult("instrument_spot", False, error=f"{type(e).__name__}: {e}")
 
@@ -171,6 +174,35 @@ def _gap_bps(conv: float, spot: float) -> float:
     return abs(conv - spot) / spot * 1e4
 
 
+# --- probe 5b: USDT futures wallet live + funded (USDT-path "no FX leak" equivalent) ---
+async def usdt_wallet(client) -> ProbeResult:
+    """USDT-margin path has no INR conversion, so the fx_conversion leak is N/A.
+    The USDT-path equivalent of 'no FX leak' is a live, funded USDT futures
+    margin wallet. PASS = a USDT wallet exists with balance > 0. FAIL = absent or
+    zero — funding the USDT margin wallet is an account/UI action (not API-doable);
+    a FAIL here is the expected blocker pending the user funding it, not a bug."""
+    try:
+        wallets = await client.get_wallets()
+        rows = wallets if isinstance(wallets, list) else [wallets]
+        usdt = None
+        for w in rows:
+            cur = str(w.get("currency") or w.get("asset") or "").upper()
+            if cur == "USDT":
+                usdt = w
+                break
+        if usdt is None:
+            return ProbeResult("usdt_wallet", False, {"usdt_wallet": None},
+                               "no USDT wallet — fund USDT futures margin via account UI (not API)")
+        bal = float(usdt.get("balance") or 0)
+        passed = bal > 0
+        return ProbeResult("usdt_wallet", passed,
+                           {"usdt_balance": bal, "locked": usdt.get("locked")},
+                           None if passed else
+                           "USDT wallet balance=0 — fund it via account UI (not API)")
+    except Exception as e:  # noqa: BLE001
+        return ProbeResult("usdt_wallet", False, error=f"{type(e).__name__}: {e}")
+
+
 # --- probe 7: rate limit (light, no stress) ---
 async def rate_limit(client) -> ProbeResult:
     try:
@@ -183,15 +215,36 @@ async def rate_limit(client) -> ProbeResult:
         return ProbeResult("rate_limit", False, error=f"{type(e).__name__}: {e}")
 
 
-PROBES = [auth_liveness, instrument_perp, instrument_spot, funding_accrual,
-          fx_conversion, basis_proxy, rate_limit]
+def _probes(margin: str = "usdt"):
+    """Probe set per margin path. USDT: 6 venue probes + usdt_wallet (fx_conversion
+    is an INR-path probe, not run for USDT — USDT margin has no INR conversion).
+    INR: the legacy 7 (fx_conversion gating). instrument_spot's spot_pair follows
+    the margin path (BTCUSDT / BTCINR)."""
+    import functools
+    spot = "BTCUSDT" if margin == "usdt" else "BTCINR"
+    spot_probe = functools.partial(instrument_spot, spot_pair=spot)
+    base = [auth_liveness, instrument_perp, spot_probe,
+            funding_accrual, basis_proxy, rate_limit]
+    if margin == "usdt":
+        return base + [usdt_wallet]
+    return [auth_liveness, instrument_perp, spot_probe,
+            funding_accrual, fx_conversion, basis_proxy, rate_limit]
 
 
-async def run_probes(client) -> list[ProbeResult]:
-    return [await p(client) for p in PROBES]
+async def run_probes(client, margin: str = "usdt") -> list[ProbeResult]:
+    return [await p(client) for p in _probes(margin)]
 
 
-def verdict(results: list[ProbeResult]) -> dict:
+def verdict(results: list[ProbeResult], margin: str = "usdt") -> dict:
+    if margin == "usdt":
+        # USDT path: no INR conversion -> no FX leg -> redesign_required always
+        # False. fx_conversion is not in the USDT probe set; gate = all run probes.
+        all_pass = all(r.passed for r in results)
+        fails = [r.name for r in results if not r.passed]
+        return {"verdict": "PASS" if all_pass else "FAIL",
+                "redesign_required": False, "margin": "usdt",
+                "fail_reason": None if all_pass else f"failed probes: {fails}"}
+    # INR legacy path: fx_conversion gap is the §29 crux + gates redesign.
     all_pass = all(r.passed for r in results)
     fx = next((r for r in results if r.name == "fx_conversion"), None)
     redesign = bool(fx and not fx.passed and fx.detail.get("mean_gap_bps") is not None)
@@ -201,7 +254,7 @@ def verdict(results: list[ProbeResult]) -> dict:
         fail_reason = "fx_conversion gap >= threshold" if "fx_conversion" in fails and redesign \
             else f"failed probes: {fails}"
     return {"verdict": "PASS" if all_pass else "FAIL",
-            "redesign_required": redesign, "fail_reason": fail_reason}
+            "redesign_required": redesign, "margin": "inr", "fail_reason": fail_reason}
 
 
 def write_gate(results: list[ProbeResult], vdict: dict) -> None:
@@ -237,21 +290,27 @@ def gate_is_fresh(gate: dict, freshness_h: float = FRESHNESS_H) -> bool:
         return False
 
 
-async def _run_live() -> None:
+async def _run_live(margin: str = "usdt") -> None:
     from app.exchange.coindcx import CoinDCXClient
     async with CoinDCXClient() as client:
-        results = await run_probes(client)
-    v = verdict(results)
+        results = await run_probes(client, margin)
+    v = verdict(results, margin)
     write_gate(results, v)
-    print(f"venue_verify {v['verdict']} -> {GATE_PATH} "
+    print(f"venue_verify [{margin}] {v['verdict']} -> {GATE_PATH} "
           f"(redesign_required={v['redesign_required']})")
 
 
 def main() -> None:
+    import argparse
     import asyncio
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "run":
-        asyncio.run(_run_live())
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", nargs="?", default="demo",
+                    help="'run' = live probes -> venue_verify.json; else demo")
+    ap.add_argument("--margin", choices=["usdt", "inr"], default="usdt",
+                    help="margin path: usdt (redesign, no FX leg) or inr (legacy, fx_conversion gating)")
+    args = ap.parse_args()
+    if args.cmd == "run":
+        asyncio.run(_run_live(args.margin))
     else:
         demo()
 
@@ -280,6 +339,27 @@ def demo() -> None:
     assert not r2b.passed and "fee" in (r2b.error or ""), r2b
     r3 = asyncio.run(instrument_spot(FakeClient()))
     assert r3.passed and r3.detail["last_price"] > 0, r3
+    # USDT re-point: instrument_spot takes spot_pair (BTCUSDT liveness)
+    r3u = asyncio.run(instrument_spot(FakeClient(), spot_pair="BTCUSDT"))
+    assert r3u.passed and r3u.detail["spot_pair"] == "BTCUSDT" and \
+        r3u.detail["doc_spot_fee_pct"] == 0.169, r3u
+    # usdt_wallet probe: funded -> PASS; absent/zero -> FAIL (expected blocker)
+    class WalletClient(FakeClient):
+        async def get_wallets(self):
+            return [{"currency": "INR", "balance": 50000},
+                    {"currency": "USDT", "balance": 120.0, "locked": 0}]
+    rw = asyncio.run(usdt_wallet(WalletClient()))
+    assert rw.passed and rw.detail["usdt_balance"] == 120.0, rw
+
+    class NoUsdtWallet(FakeClient):
+        async def get_wallets(self): return [{"currency": "INR", "balance": 50000}]
+    rw2 = asyncio.run(usdt_wallet(NoUsdtWallet()))
+    assert not rw2.passed and "fund USDT" in (rw2.error or ""), rw2
+
+    class ZeroUsdtWallet(FakeClient):
+        async def get_wallets(self): return [{"currency": "USDT", "balance": 0}]
+    rw3 = asyncio.run(usdt_wallet(ZeroUsdtWallet()))
+    assert not rw3.passed and "balance=0" in (rw3.error or ""), rw3
     # probe 4 & 6: funding_accrual + basis_proxy on a synthetic CSV in a tmp
     # dir — NEVER writes reports/coindcx_venue.csv (carry-in guard vs real recorder data).
     import tempfile
@@ -310,14 +390,34 @@ def demo() -> None:
         ProbeResult("fx_conversion", True, {"mean_gap_bps": 3.0}),
         ProbeResult("basis_proxy", True), ProbeResult("rate_limit", True),
     ]
-    v = verdict(crafted)
+    v = verdict(crafted, margin="inr")
     assert v["verdict"] == "PASS" and v["redesign_required"] is False, v
     # fx FAIL -> redesign trigger
     crafted_fx_fail = [r if r.name != "fx_conversion" else
                        ProbeResult("fx_conversion", False, {"mean_gap_bps": 12.0},
                                    "mean gap 12.00bps >= 10.0bps") for r in crafted]
-    vf = verdict(crafted_fx_fail)
+    vf = verdict(crafted_fx_fail, margin="inr")
     assert vf["verdict"] == "FAIL" and vf["redesign_required"] is True, vf
+    # USDT verdict: all-pass (incl usdt_wallet) -> PASS, redesign_required False
+    usdt_results = [
+        ProbeResult("auth_liveness", True), ProbeResult("instrument_perp", True),
+        ProbeResult("instrument_spot", True), ProbeResult("funding_accrual", True),
+        ProbeResult("basis_proxy", True), ProbeResult("rate_limit", True),
+        ProbeResult("usdt_wallet", True, {"usdt_balance": 120.0})]
+    vu = verdict(usdt_results, margin="usdt")
+    assert vu["verdict"] == "PASS" and vu["redesign_required"] is False and \
+        vu["margin"] == "usdt", vu
+    # USDT verdict: usdt_wallet FAIL -> gate FAIL (not redesign — no FX leg)
+    usdt_fail = [r if r.name != "usdt_wallet" else
+                 ProbeResult("usdt_wallet", False, {"usdt_balance": 0}, "balance=0")
+                 for r in usdt_results]
+    vuf = verdict(usdt_fail, margin="usdt")
+    assert vuf["verdict"] == "FAIL" and vuf["redesign_required"] is False, vuf
+    # _probes margin selector: usdt set has usdt_wallet, no fx_conversion; inr set has fx_conversion
+    usdt_names = [p.func.__name__ if hasattr(p, "func") else p.__name__ for p in _probes("usdt")]
+    inr_names = [p.func.__name__ if hasattr(p, "func") else p.__name__ for p in _probes("inr")]
+    assert "usdt_wallet" in usdt_names and "fx_conversion" not in usdt_names, usdt_names
+    assert "fx_conversion" in inr_names and "usdt_wallet" not in inr_names, inr_names
     # gate round-trip
     write_gate(crafted, v)
     g = load_gate()
