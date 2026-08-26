@@ -37,10 +37,14 @@ LEDGER = REPORTS / "orb_paper.csv"
 STATE_PATH = REPORTS / "orb_paper_state.json"
 KLINES = "https://fapi.binance.com/fapi/v1/klines"
 
-# per-asset config from §35.16 best NY/Asia cells, exit E1 (rr2, OR stop).
+# per-asset config: ETH from §35.19 closest-ever cell (close entry + relvol 2.0
+# filter -- INDETERMINATE not refuted: 4/4 folds +, net +3573, killed only by
+# CIlo=-0.06; live-forward resolves the bootstrap); PAXG from §35.16 (refuted,
+# kept as control). Exit E1 (rr2, OR stop).
 ASSETS = [
-    {"sym": "ETHUSDT", "session_open": "13:00", "range_bars": 3},   # ETH NY, rb=3
-    {"sym": "PAXGUSDT", "session_open": "00:00", "range_bars": 5},  # XAU Asia, rb=5
+    {"sym": "ETHUSDT", "session_open": "13:00", "range_bars": 3,
+     "entry_mode": "close", "min_relvol": 2.0},                     # ETH NY close+rv2
+    {"sym": "PAXGUSDT", "session_open": "00:00", "range_bars": 5},  # XAU Asia retest
 ]
 TF = "15m"
 POLL_S = 60

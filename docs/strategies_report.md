@@ -2804,3 +2804,63 @@ Live smoke (real klines, last 40 bars): ETH ENTER_LONG @2481.56 → EXIT_SL
 will show whether fold-3/4 regime continues out-of-sample or reverts to the
 negative mean. Either outcome is informative; neither changes the research
 verdict (paper = observation, comp4 gate is carry-only).
+
+### §35.18 — Retrace-depth + sub-1 RR (Instagram reel variant, DEFINITIVE)
+
+User shared an Instagram reel (alphazone.ai, DYfw365ik_K) showing a RoboQuant-
+coded ORB bot with a "beautiful" 1y equity curve. Extracted via Whisper
+transcript: same ORB template as orb_max (session-open range, break, wait for
+retrace, OR-level stop, RR target), two wrinkles vs what §35 had swept:
+(a) entry on a DEEP RETRACE into the range (reel: 40% of range) instead of the
+edge-touch retest, (b) a sub-1 RR target (reel: 0.8R).
+
+**Test:** added `retrace_pct` param to orb_max (entry AT the deep-retrace touch,
+no close-back filter; 0.0 = legacy edge-touch retest). Swept retrace_pct
+{0.25, 0.4, 0.5} x rr {0.8, 1.0, 1.5} on the 4 NY+Asia best cells (§35.16),
+last 1y, K-fold (K=4) + circular-block bootstrap CI gate
+(scripts/orb_retrace.py, log reports/orb_retrace.log).
+
+**Result: 0/36 pass.** Every config net negative (-3218 to -8227), every CIlo
+< 0 (-0.85 to -2.30). Deep retrace is monotonically WORSE than the edge-touch
+retest it replaces: more trades (deeper trigger fires more often) at lower win%
+(BTC 41% -> 24% as retrace deepens 0.25 -> 0.5; XAU worst, dd up to 0.83).
+Sub-1 RR (0.8) does not rescue: win% rises a few points but stays 31-45%, far
+below the ~57%+ breakeven sub-1 RR needs under real taker costs. SOL fold-1
+gains (+1763 to +3567 across retrace0.5 rows) are the same single-fold luck
+pattern K-fold exists to kill.
+
+**Verdict:** the reel's edge is an unknown-instrument, no-stated-costs,
+single-window TradingView curve — overfit showcase. Ported faithfully and run
+through the rigor gate, the variant fails harder than the base. The ORB class
+is now refuted across entry style (edge-touch retest, deep retrace, reversal),
+exit method (rr/fib/trail/partial/BE/ATR-stop, rr 0.8-3.0), session (5 opens,
+NY+Asia subsets), asset (BTC/ETH/SOL/XAU), and TF (5m-4h). No corner left.
+§35 closed. Carry-only stands.
+
+### §35.19 — Close-entry + breakout-strength filters (prop-firm reel, 0/36)
+
+Second Instagram reel (DZvAMYZA1ae): ORB with entry AT the breakout-bar close
+(no retest), plus per-signal strength filters (relative volume, ATR floor) to
+trade only "strong" breaks. Distinct from §35 phase-3 slow regime gates
+(SMA200 trend x vol tier) — these filter the breakout bar itself.
+
+**Test:** orb_max gained `entry_mode` (retest|close), `min_relvol` (bar vol /
+20-bar mean), `min_atr_pct` (ATR14/close floor); a blocked fire does not
+consume the session. Swept rv {0, 1.5, 2.0} x atr {0, 0.002, 0.004} on the 4
+NY+Asia best cells (§35.16), 1y, K-fold + bootstrap-CI gate
+(scripts/orb_filters.py, log reports/orb_filters.log).
+
+**Result: 0/36 pass.** BTC / SOL / XAU: all cells net-negative (best BTC
+-2343 at rv2.0 — filters cut losses but never turn the sign). **ETH 13:00
+rb=3 is the closest cell in all of §35**: rv2.0+atr0 net +3573, win% 55,
+dd 0.12, 4/4 folds positive [1408, 90, 745, 1052] — clears k4 AND net>0,
+killed only by CIlo = -0.06. All 9 ETH cells net-positive (+1241..+3573);
+all CIlo in [-0.23, -0.06]. The filters + close entry genuinely improve ETH
+(win% 38-43 -> 48-55, dd 0.4 -> 0.11), but ~300 trades/1y with
+bootstrap-resampled paths still crossing zero is NOT proof of edge — the
+verdict is indeterminate, not refuted, on this one cell.
+
+**Action:** research gate stands (0 passes). ETH close/rv2.0 cell promoted to
+LIVE-FORWARD OBSERVATION via orb_paper (see §35.17 paper infra) — out-of-sample
+accrual resolves what the bootstrap cannot. No capital commitment; comp-4 gate
+unchanged (carry-only).

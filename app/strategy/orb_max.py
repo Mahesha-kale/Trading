@@ -43,6 +43,16 @@ class ORBMax(BaseStrategy):
     kind = "trend"  # exit style is reversion (fixed stop+TP), but signal is breakout
     params = {"range_bars": 4, "session_open": "00:00", "reversal": False, "rr": 2.0,
               "min_visits": 0,
+              # retrace-depth entry (§35.18, alphazone RoboQuant reel): 0.0 = touch
+              # of the edge + close back outside (video original); >0 = price must
+              # retrace that fraction INTO the range, entry AT the touch (reel=0.4).
+              "retrace_pct": 0.0,
+              # entry style + breakout-strength filters (§35.19, prop-firm reel):
+              # entry_mode close = fire AT the breakout-bar close (no retest);
+              # min_relvol = signal-bar vol >= x * 20-bar mean vol (0=off);
+              # min_atr_pct = ATR14/close >= x (0=off). Filters block the fire,
+              # session may re-trigger on a later bar.
+              "entry_mode": "retest", "min_relvol": 0.0, "min_atr_pct": 0.0,
               # exit-management variants (§35.14): tp_mode rr|fib|trail, fib level,
               # sl_mode or|atr (vol-adaptive ATR stop off the signal close).
               "tp_mode": "rr", "fib": 2.618, "sl_mode": "or", "atr_mult": 1.5}
@@ -61,6 +71,12 @@ class ORBMax(BaseStrategy):
         # ATR(14) for the vol-adaptive ATR stop (sl_mode="atr"); computed once.
         self._atr = atr(df["high"], df["low"], df["close"], 14).to_numpy()
         self._close = df["close"].to_numpy()  # signal-bar close as entry proxy for ATR stop
+        if "volume" in df.columns:
+            vols = df["volume"].to_numpy(dtype=float)
+            vol20 = df["volume"].rolling(20, min_periods=1).mean().to_numpy()  # strength filter
+        else:  # no volume feed (synthetic frames) -> relvol filter can't fire-block
+            vols = np.full(n, np.nan)
+            vol20 = np.full(n, np.nan)
 
         dates = df.index.normalize()
         highs = df["high"].to_numpy(); lows = df["low"].to_numpy()
@@ -108,23 +124,56 @@ class ORBMax(BaseStrategy):
 
             c = float(closes[i]); hi = float(highs[i]); lo = float(lows[i])
             fired = 0
-            if p["reversal"]:
+            if p.get("entry_mode", "retest") == "close":
+                # breakout-close entry (§35.19): fire on any bar CLOSING outside
+                # the range (no retest wait). entered guards one-per-session;
+                # armed flags irrelevant here.
+                if c > or_high:
+                    fired = 1
+                elif c < or_low:
+                    fired = -1
+            elif p["reversal"]:
                 # failed upside break -> short; failed downside break -> long
                 if armed_long and c < or_high:
                     fired = -1
                 elif armed_short and c > or_low:
                     fired = 1
             else:
-                # retest entry: broke above, pulled back to OR high, closed back above
-                if armed_long and lo <= or_high and c > or_high:
-                    fired = 1
-                elif armed_short and hi >= or_low and c < or_low:
-                    fired = -1
+                rp = float(p.get("retrace_pct", 0.0))
+                if rp > 0.0 and or_high > or_low:
+                    # deep-retrace entry (RoboQuant reel): after the break, price
+                    # must retrace rp of the range back inside; entry AT the touch,
+                    # no close-back-outside filter.
+                    rng_ = or_high - or_low
+                    if armed_long and lo <= or_high - rp * rng_:
+                        fired = 1
+                    elif armed_short and hi >= or_low + rp * rng_:
+                        fired = -1
+                else:
+                    # retest entry: broke above, pulled back to OR high, closed back above
+                    if armed_long and lo <= or_high and c > or_high:
+                        fired = 1
+                    elif armed_short and hi >= or_low and c < or_low:
+                        fired = -1
             # visit-count filter: only fire if the stop level was tested >= min_visits
             if fired == 1 and visits_long < min_visits:
                 fired = 0
             if fired == -1 and visits_short < min_visits:
                 fired = 0
+            # breakout-strength filters (§35.19): relative vol + ATR floor. A
+            # blocked fire does NOT set entered -- a later bar may still qualify.
+            if fired != 0:
+                mrv = float(p.get("min_relvol", 0.0))
+                if mrv > 0.0:
+                    v20 = float(vol20[i])
+                    if not np.isfinite(v20) or v20 <= 0 or vols[i] < mrv * v20:
+                        fired = 0
+            if fired != 0:
+                mapct = float(p.get("min_atr_pct", 0.0))
+                if mapct > 0.0:
+                    a = float(self._atr[i])
+                    if not np.isfinite(a) or a / c < mapct:
+                        fired = 0
             if fired != 0:
                 sig.iloc[i] = fired
                 self._side[i] = fired
@@ -237,6 +286,45 @@ def _demo() -> None:
     assert int(sv0.iloc[4]) == 1, "min_visits=0 should fire"
     sv2 = ORBMax({"range_bars": 2, "session_open": "00:00", "min_visits": 2}).generate_signals(dfv)
     assert int(sv2.iloc[4]) == 0, "min_visits=2 should block (only 1 visit)"
+    # retrace-depth entry (retrace_pct=0.5, range 100-101): break above at bar 2,
+    # shallow touch at bar 3 (low 100.9 > trigger 100.5) must NOT fire; deep
+    # retrace at bar 4 (low 100.4 <= 100.5) fires at the touch even though the
+    # close (100.45) is back INSIDE the range (no close-back filter).
+    idxd = pd.date_range("2026-01-01 00:00", periods=96, freq="15min", tz="UTC")
+    od = np.full(96, 100.0); hd = np.full(96, 100.0); ld = np.full(96, 100.0); cd = np.full(96, 100.0)
+    hd[1] = 101.0; ld[1] = 100.0; cd[1] = 101.0   # range 100-101
+    hd[2] = 102.0; ld[2] = 101.0; cd[2] = 102.0   # break above or_high=101
+    hd[3] = 101.5; ld[3] = 100.9; cd[3] = 101.4   # shallow touch, no fire
+    hd[4] = 101.0; ld[4] = 100.4; cd[4] = 100.45  # deep retrace -> +1 at touch
+    dfd = pd.DataFrame({"open": od, "high": hd, "low": ld, "close": cd}, index=idxd)
+    sd = ORBMax({"range_bars": 2, "session_open": "00:00", "retrace_pct": 0.5}).generate_signals(dfd)
+    assert int(sd.iloc[3]) == 0, "shallow touch should not fire at retrace_pct=0.5"
+    assert int(sd.iloc[4]) == 1, f"deep retrace should fire at bar 4, got {sd.iloc[4]}"
+    # legacy path unchanged: same frame with retrace_pct=0 needs close-back-outside
+    sd0 = ORBMax({"range_bars": 2, "session_open": "00:00"}).generate_signals(dfd)
+    assert int(sd0.iloc[4]) == 0, "legacy retest needs close > or_high (100.45 < 101)"
+    # breakout-close entry (entry_mode="close"): fires AT the breakout bar close,
+    # no retest wait; min_relvol blocks weak-volume breaks. Range 100-101, bar 2
+    # closes 102 > or_high=101 -> +1 at bar 2 (vs retest mode needing bar 3).
+    vd = np.full(96, 100.0)
+    vd[2] = 500.0  # breakout bar: ~2.1x the 3-bar mean (233) -> passes min_relvol=2
+    dfc = pd.DataFrame({"open": od, "high": hd, "low": ld, "close": cd, "volume": vd}, index=idxd)
+    sc1 = ORBMax({"range_bars": 2, "session_open": "00:00", "entry_mode": "close"}).generate_signals(dfc)
+    assert int(sc1.iloc[2]) == 1, f"close entry should fire at breakout bar 2, got {sc1.iloc[2]}"
+    sc2 = ORBMax({"range_bars": 2, "session_open": "00:00", "entry_mode": "close",
+                  "min_relvol": 2.0}).generate_signals(dfc)
+    assert int(sc2.iloc[2]) == 1, "strong-volume break passes min_relvol=2"
+    sc3 = ORBMax({"range_bars": 2, "session_open": "00:00", "entry_mode": "close",
+                  "min_relvol": 4.0}).generate_signals(dfc)
+    assert int(sc3.iloc[2]) == 0, "min_relvol=4 blocks the 3x break"
+    # blocked fire does not consume the session: bar 3 close still > or_high with
+    # fresh volume spike should fire
+    vd3 = vd.copy(); vd3[3] = 2500.0  # 3.1x the 4-bar mean (800) once bar2's 500 is in it
+    cd3 = cd.copy(); cd3[3] = 101.4  # still above or_high; arm from bar 2 close
+    dfc2 = pd.DataFrame({"open": od, "high": hd, "low": ld, "close": cd3, "volume": vd3}, index=idxd)
+    sc4 = ORBMax({"range_bars": 2, "session_open": "00:00", "entry_mode": "close",
+                  "min_relvol": 3.0}).generate_signals(dfc2)
+    assert int(sc4.iloc[3]) == 1, "blocked bar2 -> bar3 re-fires when filter passes"
     print("orb_max self-check OK")
 
 
